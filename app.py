@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Form-Locked PDF Filler")
-st.write("Tap directly inside any bounded yellow line box to type. Every box is constrained perfectly to its own form line width!")
+st.write("Tap directly inside any yellow highlighted box to type. Every box matches the form fields perfectly!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -36,35 +36,34 @@ if uploaded_file is not None:
         h = (r.y1 - r.y0) * scale_y
         
         # Keep structural height padding safe for mobile fingertips
-        if h < 16:
-            h = 18
+        if h < 18:
+            h = 20
             
-        # Unique field tracking anchor
         f_id = widget.field_name.replace('"', '&quot;')
         current_val = widget.field_value or ""
 
-        # FORCE STRICT WIDTH LIMITS AND REMOVE STRETCHING
+        # Vivid yellow background highlights that are fully clickable and editable
         input_elements_html += f"""
         <input type="text" data-field="{f_id}" value="{current_val}" 
             style="position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; 
-                   max-width: {w}px; min-width: {w}px; /* Hard-lock the width explicitly */
-                   background-color: rgba(255, 235, 59, 0.08); border: 1px dashed #ffc107; 
+                   max-width: {w}px; min-width: {w}px;
+                   background-color: rgba(255, 235, 59, 0.35); border: 1px solid #e6b800; 
                    border-radius: 2px; font-size: 13px; font-family: Helvetica, sans-serif; color: #0000FF;
-                   padding: 0px 4px; box-sizing: border-box; outline: none;"
+                   padding: 0px 4px; box-sizing: border-box; outline: none; z-index: 10;"
         />
         """
 
-    # --- CLIENT-SIDE ENGINE WITH WIDTH ENFORCEMENT ---
+    # --- CLIENT-SIDE ENGINE ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif;">
         <div style="margin-bottom: 15px;">
-            <button id="downloadBtn" style="padding: 12px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+            <button id="downloadBtn" style="padding: 14px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">
                 📥 Download Completed PDF
             </button>
         </div>
         
-        <div id="canvas-container" style="position: relative; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc;">
-            <img id="pdf-bg" src="data:image/png;base64,{img_data}" style="display: block; max-width: 100%; height: auto;" />
+        <div id="canvas-container" style="position: relative; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc; touch-action: manipulation;">
+            <img id="pdf-bg" src="data:image/png;base64,{img_data}" style="display: block; max-width: 100%; height: auto; pointer-events: none;" />
             {input_elements_html}
         </div>
     </div>
@@ -82,7 +81,6 @@ if uploaded_file is not None:
                 const pages = pdfDoc.getPages();
                 const targetPage = pages[{page_num}];
                 
-                // Read values from the hard-bounded input fields right inside your browser
                 const inputs = document.querySelectorAll('#canvas-container input');
                 
                 for (let input of inputs) {{
@@ -90,13 +88,12 @@ if uploaded_file is not None:
                     const textValue = input.value.trim();
                     
                     if (textValue.length > 0) {{
-                        // Read the precise relative layout positions natively from the page widget fields
                         const styleLeft = parseFloat(input.style.left);
                         const styleTop = parseFloat(input.style.top);
                         
                         const {{ width, height }} = targetPage.getSize();
                         const pdfX = (styleLeft / {img_w}) * width;
-                        const pdfY = height - ((styleTop / {img_h}) * height) - 11; // Align beautifully down onto baseline
+                        const pdfY = height - ((styleTop / {img_h}) * height) - 13; 
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
