@@ -58,16 +58,23 @@ if uploaded_file is not None:
         x = r.x0 * scale_x
         y = r.y0 * scale_y
         w = (r.x1 - r.x0) * scale_x
-        h = (r.y1 - r.x0) * scale_y if (r.y1 - r.y0) < 15 else (r.y1 - r.y0) * scale_y
         
+        # FIXED: Corrected coordinate subtraction to use y0 instead of x0
+        h = (r.y1 - r.y0) * scale_y
+        
+        # Safety padding fallback for ultra-thin empty fields
+        if h < 16:
+            h = 18
+            
         current_val = st.session_state.field_values.get(widget.field_name, widget.field_value or "")
         
-        # Injects direct transparent box inputs sitting perfectly on top of the yellow highlighted document lines
+        # Renders beautiful transparent boxes with fine yellow tracking outlines
         input_elements_html += f"""
         <input type="text" value="{current_val}" 
             style="position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; 
-                   background-color: rgba(255, 235, 59, 0.35); border: 1px solid #ffc107; 
-                   font-size: 13px; font-family: sans-serif; padding: 0px 2px; box-sizing: border-box;"
+                   background-color: rgba(255, 235, 59, 0.15); border: 1.5px dashed #e6b800; 
+                   border-radius: 2px; font-size: 13px; font-family: sans-serif; color: #0000FF;
+                   padding: 0px 2px; box-sizing: border-box;"
             onblur="parent.window.location.search = '?update_field=' + encodeURIComponent('{widget.field_name}') + '&value=' + encodeURIComponent(this.value);"
         />
         """
