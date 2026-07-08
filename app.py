@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🎯 Professional PDF Form Filler")
-st.write("Every fillable area is highlighted below in yellow. Tap inside any box to type naturally!")
+st.write("All artifact text noise has been wiped out. Checkboxes are now clean and ready for your 'X'!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -34,22 +34,25 @@ if uploaded_file is not None:
             width_pct = ((r.x1 - r.x0) / page.rect.width) * 100
             height_pct = ((r.y1 - r.y0) / page.rect.height) * 100
             
-            # --- FIXED: HARD CAP HEIGHTS TO STOP OVERLAPPING ---
-            # Shuts down vertical bleeding onto secondary phone rows completely
+            # Keep height metrics safe from overlapping
             if height_pct > 3.0:
-                height_pct = 2.6
+                height_pct = 2.5
             elif height_pct < 1.6:
                 height_pct = 1.8
                 
             f_id = widget.field_name.replace('"', '&quot;')
             
+            # --- FIXED: FORCE WIPE SINGLE LETTER CHECKBOX NOISE ---
             raw_val = widget.field_value or ""
-            if len(raw_val.strip()) <= 2 and raw_val.strip().lower() in ['f', 'ff', 't', 'on', 'off', '1', '0']:
+            cleaned_val = raw_val.strip()
+            
+            # If it's an internal placeholder string ('f', 'ff', 't', 'yes', 'no'), force it completely empty
+            if len(cleaned_val) <= 3 and cleaned_val.lower() in ['f', 'ff', 't', 'on', 'off', '1', '0', 'yes', 'no']:
                 current_val = ""
             else:
                 current_val = raw_val
 
-            # FIXED STYLE: Smaller 8.5px font, absolute padding strip, and overflow hidden prevents box expansions
+            # STYLE FIX: text-align centers your 'X' markers directly inside the small checkbox frames
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
                 style="position: absolute; 
@@ -63,17 +66,17 @@ if uploaded_file is not None:
                        background-color: rgba(255, 235, 59, 0.22); 
                        border: 1px solid #ffc107; 
                        border-radius: 1px; 
-                       font-size: 8.5px; 
+                       font-size: 9px; 
                        font-family: Helvetica, sans-serif; 
                        font-weight: bold; 
                        color: #0000FF;
-                       padding: 0px 1px; 
+                       text-align: center; /* Centers X marks cleanly inside boxes */
+                       padding: 0; 
                        margin: 0;
                        outline: none; 
                        z-index: 10; 
                        line-height: normal;
-                       overflow: hidden;
-                       text-overflow: clip;"
+                       overflow: hidden;"
             />
             """
 
@@ -85,7 +88,7 @@ if uploaded_file is not None:
         layer_visibility = "block" if p_idx == 0 else "none"
         all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {layer_visibility}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_content}\n</div>'
 
-    # --- CANVAS DESPATCH LAYER ---
+    # --- CLIENT INTERFACE CANVAS ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -167,14 +170,20 @@ if uploaded_file is not None:
                         
                         const leftPct = parseFloat(input.style.left) / 100;
                         const topPct = parseFloat(input.style.top) / 100;
+                        const widthPct = parseFloat(input.style.width) / 100;
                         
-                        const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 8.5; // Fine baseline landing index
+                        // Center horizontal alignment execution for check marks
+                        let pdfX = leftPct * width;
+                        if (textValue.toLowerCase() === 'x' && (widthPct * width) < 25) {{
+                            pdfX = (leftPct * width) + ((widthPct * width) / 2) - 3.5;
+                        }}
+                        
+                        const pdfY = height - (topPct * height) - 8.5; 
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
                             y: pdfY,
-                            size: 8.5, 
+                            size: 9, 
                             font: helveticaFont,
                             color: PDFLib.rgb(0, 0, 0.75)
                         }});
@@ -188,11 +197,4 @@ if uploaded_file is not None:
                 link.download = 'housing_application_completed.pdf';
                 document.body.appendChild(link);
                 link.click();
-                document.body.removeChild(link);
-            }} catch (err) {{
-                alert("Processing Error: " + err.message);
-            }}
-        }});
-    </script>
-    """
-    st.components.v1.html(filler_html, height=img_h + 150, width=img_w + 50, scrolling=True)
+                document
