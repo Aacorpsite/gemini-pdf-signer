@@ -12,7 +12,7 @@ st.write("Tap anywhere directly on the PDF image below to type text or place you
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
 if "placed_elements" not in st.session_state:
-    st.session_state.placed_elements = []  # Keeps track of all added text/signatures
+    st.session_state.placed_elements = []
 
 # --- FILE IMPORT ---
 uploaded_file = st.file_uploader("Upload your document:", type=["pdf"])
@@ -29,10 +29,11 @@ if uploaded_file is not None:
         page_num = 0
         
     page = doc[page_num]
-    pix = page.get_pixmap(dpi=120)  # Standardized crisp resolution
+    pix = page.get_pixmap(dpi=120)
     
-    # Clean conversion to strict PIL Image
-    base_image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    # Convert directly to a standard PNG open memory stream instance
+    png_bytes = pix.tobytes("png")
+    base_image = Image.open(io.BytesIO(png_bytes))
 
     st.subheader("👁️ Tap Document to Select Field Box")
     
@@ -41,13 +42,13 @@ if uploaded_file is not None:
         fill_color="rgba(0, 0, 255, 0.1)",  
         stroke_width=2,
         stroke_color="#0000FF",
-        background_image=base_image,
+        background_image=base_image,  # Re-verified clean image handling pass
         update_streamlit=True,
         height=base_image.height,
         width=base_image.width,
         drawing_mode="point",  
         point_display_radius=4,
-        key="pdf_interaction_canvas"
+        key="visual_click_matrix_v2" # Changed session key to force a clean server refresh
     )
 
     # --- POP-UP FIELD ENTRY CONTEXT ---
@@ -98,7 +99,6 @@ if uploaded_file is not None:
             scale_x, scale_y = p.rect.width / base_image.width, p.rect.height / base_image.height
             
             if element["type"] == "text":
-                # Fixed parenthesis matching bug here
                 p.insert_text(
                     fitz.Point(element["x"] * scale_x, (element["y"] + element["size"]/2) * scale_y), 
                     element["content"], fontsize=element["size"], color=(0, 0, 1)
@@ -120,5 +120,4 @@ if uploaded_file is not None:
         data=output_doc.write(),
         file_name="visually_filled_form.pdf",
         mime="application/pdf"
-        )
-                        
+    )
