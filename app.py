@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🎯 Professional PDF Form Filler")
-st.write("All artifact text noise has been wiped out. Checkboxes are now clean and ready for your 'X'!")
+st.write("Font sizes now scale down dynamically to prevent long text or email addresses from cutting off!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -49,8 +49,10 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
+            # FIXED: Added an oninput event listener that dynamically drops font size if text exceeds field boundaries
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
+                oninput="this.style.fontSize = this.value.length > 15 ? '7px' : (this.value.length > 10 ? '8px' : '10px');"
                 style="position: absolute; 
                        left: {left_pct}%; 
                        top: {top_pct}%; 
@@ -62,24 +64,22 @@ if uploaded_file is not None:
                        background-color: rgba(255, 235, 59, 0.22); 
                        border: 1px solid #ffc107; 
                        border-radius: 1px; 
-                       font-size: 9px; 
+                       font-size: 10px; 
                        font-family: Helvetica, sans-serif; 
                        font-weight: bold; 
                        color: #0000FF;
-                       text-align: center;
-                       padding: 0; 
+                       text-align: left;
+                       padding: 0px 2px; 
                        margin: 0;
                        outline: none; 
                        z-index: 10; 
-                       line-height: normal;
-                       overflow: hidden;"
+                       line-height: normal;"
             />
             """
 
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
     
-    # FIXED: Completely flattened loop logic without nested inline if/else f-string definitions
     all_inputs_html = ""
     for p_idx, html_content in widgets_html_by_page.items():
         if p_idx == 0:
@@ -89,7 +89,7 @@ if uploaded_file is not None:
             
         all_inputs_html += '<div class="page-layer" id="layer-' + str(p_idx) + '" style="display: ' + layer_visibility + '; position: absolute; top:0; left:0; width:100%; height:100%;">\n' + html_content + '\n</div>'
 
-    # --- BULLETPROOF RAW TEXT TEMPLATE BLOCK ---
+    # --- RAW TEMPLATE STREAM BLOCK ---
     raw_template = r"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -183,10 +183,18 @@ if uploaded_file is not None:
                         
                         const pdfY = height - (topPct * height) - 8.5; 
 
+                        // FIXED: Output print layer calculates font size on compile length to protect layout export file
+                        let printSize = 9.5;
+                        if (textValue.length > 20) {
+                            printSize = 6.5;
+                        } else if (textValue.length > 13) {
+                            printSize = 8.0;
+                        }
+
                         targetPage.drawText(textValue, {
                             x: pdfX,
                             y: pdfY,
-                            size: 9, 
+                            size: printSize, 
                             font: helveticaFont,
                             color: PDFLib.rgb(0, 0, 0.75)
                         });
@@ -208,7 +216,6 @@ if uploaded_file is not None:
     </script>
     """
     
-    # Safe text replacements without f-string conflicts
     filler_html = raw_template.replace("__TOTAL_PAGES__", str(total_pages))
     filler_html = filler_html.replace("__MAX_WIDTH__", str(pix.width))
     filler_html = filler_html.replace("__FIRST_PAGE_IMG__", images_js_array[0].strip('"'))
