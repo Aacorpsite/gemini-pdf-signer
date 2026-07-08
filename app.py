@@ -30,27 +30,27 @@ if uploaded_file is not None:
         
     page = doc[page_num]
     pix = page.get_pixmap(dpi=120)  # Standardized crisp resolution
-    img_data = Image.open(io.BytesIO(pix.tobytes("png")))
+    
+    # Clean conversion to strict PIL Image
+    base_image = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
 
     st.subheader("👁️ Tap Document to Select Field Box")
     
     # --- INTERACTIVE CLICK CANVAS ---
-    # This sits directly on top of your PDF image background layer
     canvas_result = st_canvas(
-        fill_color="rgba(0, 0, 255, 0.1)",  # Highlight selections slightly
+        fill_color="rgba(0, 0, 255, 0.1)",  
         stroke_width=2,
         stroke_color="#0000FF",
-        background_image=img_data,
+        background_image=base_image,
         update_streamlit=True,
-        height=img_data.height,
-        width=img_data.width,
-        drawing_mode="point",  # Changes behavior to single-tap detection
+        height=base_image.height,
+        width=base_image.width,
+        drawing_mode="point",  
         point_display_radius=4,
         key="pdf_interaction_canvas"
     )
 
     # --- POP-UP FIELD ENTRY CONTEXT ---
-    # Detects if your finger touched a specific coordinate on the form layout
     if canvas_result.json_data and canvas_result.json_data["objects"]:
         last_object = canvas_result.json_data["objects"][-1]
         tap_x = last_object["left"]
@@ -59,7 +59,6 @@ if uploaded_file is not None:
         st.write("---")
         st.info(f"📍 Selected position on document alignment grid.")
         
-        # Mode controller toggles between typing standard text vs stamping ink signature
         input_mode = st.radio("What would you like to place at this spot?", ["Text / Information", "E-Signature"])
         
         if input_mode == "Text / Information":
@@ -91,11 +90,14 @@ if uploaded_file is not None:
                     st.rerun()
 
     # --- RENDER LAYER PROCESSOR ---
-    # Burns all your custom text and signatures back down onto the official PDF file canvas structure
     output_doc = fitz.open(stream=st.session_state.pdf_data, filetype="pdf")
     
     for element in st.session_state.placed_elements:
         if element["page"] == page_num:
             p = output_doc[element["page"]]
-            # Map coordination scales cleanly across high-definition view boundaries
-            scale_x, scale_y = p.rect.width / img
+            scale_x, scale_y = p.rect.width / base_image.width, p.rect.height / base_image.height
+            
+            if element["type"] == "text":
+                p.insert_text(
+                    fitz.Point(element["x"] * scale_x, (element
+            
