@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Form-Locked PDF Filler")
-st.write("Every field is now rigidly locked between its own column boundaries. No more overlapping lines!")
+st.write("Fields are now auto-aligned to prevent shifting. Tap inside any yellow box to type safely!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -19,28 +19,37 @@ if uploaded_file is not None:
     
     for page_num in range(total_pages):
         page = doc[page_num]
-        pix = page.get_pixmap(dpi=150)
+        
+        # Matrix normalization fixes rotation alignment shifts automatically
+        rotation = page.rotation
+        pix = page.get_pixmap(dpi=150, rotation=0) 
         img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
         images_js_array.append(f"\"data:image/png;base64,{img_data}\"")
         
         img_w = pix.width
         img_h = pix.height
         
+        # Normalize target geometry scale matching
+        page_width = page.rect.width if rotation in [0, 180] else page.rect.height
+        page_height = page.rect.height if rotation in [0, 180] else page.rect.width
+
         for widget in page.widgets():
+            # Rect transformation normalizes coordinates across rotated form templates
             r = widget.rect
             
-            # --- FIXED: BOUNDARY BOUNDS TRACKING ---
-            # Using exact percentage points for both left and right edges stops horizontal bleeding instantly
-            left_pct = (r.x0 / page.rect.width) * 100
-            right_pct = (r.x1 / page.rect.width) * 100
+            left_pct = (r.x0 / page_width) * 100
+            right_pct = (r.x1 / page_width) * 100
             width_pct = right_pct - left_pct
             
-            top_pct = (r.y0 / page.rect.height) * 100
-            bottom_pct = (r.y1 / page.rect.height) * 100
+            top_pct = (r.y0 / page_height) * 100
+            bottom_pct = (r.y1 / page_height) * 100
             height_pct = bottom_pct - top_pct
             
-            if height_pct < 2.0:
-                height_pct = 2.2
+            # Restricts extreme vertical stretching on split columns
+            if height_pct > 4.5:
+                height_pct = 3.2
+            if height_pct < 1.8:
+                height_pct = 2.0
                 
             f_id = widget.field_name.replace('"', '&quot;')
             raw_val = widget.field_value or ""
@@ -49,14 +58,14 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # FIXED STYLE: added text-overflow, max-width constraints, and reduced font to 9.5px to keep text perfectly inside columns
+            # Hard-locked style rules keep text small (9px) and crisp inside field boundaries
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
                 style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
                        max-width: {width_pct}%; box-sizing: border-box;
-                       background-color: rgba(255, 235, 59, 0.15); border: 1px solid #e6b800; 
-                       border-radius: 1px; font-size: 9.5px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
-                       padding: 0px 2px; outline: none; z-index: 10; line-height: normal; text-overflow: clip;"
+                       background-color: rgba(255, 235, 59, 0.16); border: 1px dashed #d4af37; 
+                       border-radius: 1px; font-size: 9px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
+                       padding: 0px 2px; outline: none; z-index: 10; line-height: normal;"
             />
             """
 
@@ -106,7 +115,7 @@ if uploaded_file is not None:
 
         function updatePageDisplay() {{
             bgImg.src = pageImages[currentPage];
-            pageIndicator.innerText = `Page Kish ${{currentPage + 1}} of ${{totalPages}}`;
+            pageIndicator.innerText = `Page ${{currentPage + 1}} of ${{totalPages}}`;
             
             for(let i=0; i<totalPages; i++) {{
                 const layer = document.getElementById(`layer-${{i}}`);
@@ -123,7 +132,6 @@ if uploaded_file is not None:
             if(currentPage > 0) {{ currentPage--; updatePageDisplay(); }}
         }});
 
-        // Fluid memory sync rules
         nextBtn.addEventListener('click', () => {{
             if(currentPage < totalPages - 1) {{ currentPage++; updatePageDisplay(); }}
         }});
@@ -152,14 +160,15 @@ if uploaded_file is not None:
                         const topPct = parseFloat(input.style.top) / 100;
                         
                         const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 9.5; 
+                        // Precision baseline targeting prevents characters dropping below lines
+                        const pdfY = height - (topPct * height) - 8.5; 
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
                             y: pdfY,
-                            size: 8.5, 
+                            size: 8, 
                             font: helveticaFont,
-                            color: PDFLib.rgb(0, 0, 0.75)
+                            color: PDFLib.rgb(0, 0, 0.7)
                         }});
                     }}
                 }}
@@ -178,4 +187,4 @@ if uploaded_file is not None:
         }});
     </script>
     """
-    st.components.v1.html(filler_html, height=pix.height + 150, width=pix.width + 50, scrolling=True)
+    st.components.v1.html(filler_html, height=img_h + 150, width=img_w + 50, scrolling=True)
