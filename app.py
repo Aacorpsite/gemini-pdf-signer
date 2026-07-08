@@ -1,8 +1,8 @@
 import streamlit as st
 
-st.set_page_config(page_title="My Own Free PDF Filler", layout="wide")
-st.title("🛠️ My Own Free PDF Filler")
-st.write("Tap precisely on any black line on the form below to type. Hit Download when you are done!")
+st.set_page_config(page_title="Professional PDF Filler", layout="wide")
+st.title("🛠️ Custom Form-Locked PDF Filler")
+st.write("Tap directly inside any bounded yellow line box to type. Every box is constrained perfectly to its own form line width!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -21,7 +21,40 @@ if uploaded_file is not None:
     img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-    # --- SIMPLIFIED TARGET POINT ENGINE ---
+    # Gather precise interactive coordinates from the embedded PDF widgets
+    img_w = pix.width
+    img_h = pix.height
+    scale_x = img_w / page.rect.width
+    scale_y = img_h / page.rect.height
+
+    input_elements_html = ""
+    for widget in page.widgets():
+        r = widget.rect
+        x = r.x0 * scale_x
+        y = r.y0 * scale_y
+        w = (r.x1 - r.x0) * scale_x
+        h = (r.y1 - r.y0) * scale_y
+        
+        # Keep structural height padding safe for mobile fingertips
+        if h < 16:
+            h = 18
+            
+        # Unique field tracking anchor
+        f_id = widget.field_name.replace('"', '&quot;')
+        current_val = widget.field_value or ""
+
+        # FORCE STRICT WIDTH LIMITS AND REMOVE STRETCHING
+        input_elements_html += f"""
+        <input type="text" data-field="{f_id}" value="{current_val}" 
+            style="position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; 
+                   max-width: {w}px; min-width: {w}px; /* Hard-lock the width explicitly */
+                   background-color: rgba(255, 235, 59, 0.08); border: 1px dashed #ffc107; 
+                   border-radius: 2px; font-size: 13px; font-family: Helvetica, sans-serif; color: #0000FF;
+                   padding: 0px 4px; box-sizing: border-box; outline: none;"
+        />
+        """
+
+    # --- CLIENT-SIDE ENGINE WITH WIDTH ENFORCEMENT ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif;">
         <div style="margin-bottom: 15px;">
@@ -32,119 +65,59 @@ if uploaded_file is not None:
         
         <div id="canvas-container" style="position: relative; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc;">
             <img id="pdf-bg" src="data:image/png;base64,{img_data}" style="display: block; max-width: 100%; height: auto;" />
+            {input_elements_html}
         </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
     <script>
-        const canvasContainer = document.getElementById('canvas-container');
-        const bgImg = document.getElementById('pdf-bg');
         const downloadBtn = document.getElementById('downloadBtn');
-        
-        let typedEntries = [];
-        let currentInput = null;
-
-        canvasContainer.addEventListener('click', function(e) {{
-            if (e.target !== bgImg && e.target !== canvasContainer) return;
-            
-            if (currentInput) {{
-                commitCurrentInput();
-            }}
-
-            const rect = bgImg.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
-            
-            const pctX = clickX / rect.width;
-            const pctY = clickY / rect.height;
-
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.style.position = 'absolute';
-            input.style.left = clickX + 'px';
-            input.style.top = (clickY - 12) + 'px'; // Positions cursor perfectly baseline above the line
-            input.style.fontSize = '14px';
-            input.style.fontFamily = 'Helvetica';
-            input.style.color = '#0000FF';
-            input.style.border = 'none';
-            input.style.borderBottom = '1px solid #0055FF'; // Minimal underline marker while typing
-            input.style.backgroundColor = 'rgba(255, 255, 255, 0.85)';
-            input.style.outline = 'none';
-            input.style.zIndex = '1000';
-            
-            canvasContainer.appendChild(input);
-            input.focus();
-            currentInput = {{ element: input, pctX: pctX, pctY: pctY }};
-
-            input.addEventListener('keydown', function(evt) {{
-                if (evt.key === 'Enter') {{
-                    commitCurrentInput();
-                }}
-            }});
-        }});
-
-        function commitCurrentInput() {{
-            if (!currentInput) return;
-            const text = currentInput.element.value.trim();
-            if (text.length > 0) {{
-                typedEntries.push({{
-                    text: text,
-                    pctX: currentInput.pctX,
-                    pctY: currentInput.pctY,
-                    pageIdx: {page_num}
-                }});
-                
-                const textLabel = document.createElement('div');
-                textLabel.innerText = text;
-                textLabel.style.position = 'absolute';
-                textLabel.style.left = currentInput.element.style.left;
-                textLabel.style.top = currentInput.element.style.top;
-                textLabel.style.fontSize = '14px';
-                textLabel.style.fontFamily = 'Helvetica';
-                textLabel.style.color = '#0000FF';
-                textLabel.style.pointerEvents = 'none';
-                canvasContainer.appendChild(textLabel);
-            }}
-            currentInput.element.remove();
-            currentInput = null;
-        }}
 
         downloadBtn.addEventListener('click', async function() {{
-            if (currentInput) commitCurrentInput();
-            
             try {{
                 const pdfDataBytes = Uint8Array.from(atob('{pdf_base64}'), c => c.charCodeAt(0));
                 const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);
                 const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
                 const pages = pdfDoc.getPages();
-
-                for (let entry of typedEntries) {{
-                    const targetPage = pages[entry.pageIdx];
-                    const {{ width, height }} = targetPage.getSize();
+                const targetPage = pages[{page_num}];
+                
+                // Read values from the hard-bounded input fields right inside your browser
+                const inputs = document.querySelectorAll('#canvas-container input');
+                
+                for (let input of inputs) {{
+                    const fieldName = input.getAttribute('data-field');
+                    const textValue = input.value.trim();
                     
-                    const pdfX = entry.pctX * width;
-                    const pdfY = height - (entry.pctY * height) - 2; 
+                    if (textValue.length > 0) {{
+                        // Read the precise relative layout positions natively from the page widget fields
+                        const styleLeft = parseFloat(input.style.left);
+                        const styleTop = parseFloat(input.style.top);
+                        
+                        const {{ width, height }} = targetPage.getSize();
+                        const pdfX = (styleLeft / {img_w}) * width;
+                        const pdfY = height - ((styleTop / {img_h}) * height) - 11; // Align beautifully down onto baseline
 
-                    targetPage.drawText(entry.text, {{
-                        x: pdfX,
-                        y: pdfY,
-                        size: 11,
-                        font: helveticaFont,
-                        color: PDFLib.rgb(0, 0, 1)
-                    }});
+                        targetPage.drawText(textValue, {{
+                            x: pdfX,
+                            y: pdfY,
+                            size: 10,
+                            font: helveticaFont,
+                            color: PDFLib.rgb(0, 0, 1)
+                        }});
+                    }}
                 }}
 
                 const savedPdfBytes = await pdfDoc.save();
                 const blob = new Blob([savedPdfBytes], {{ type: 'application/pdf' }});
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = 'my_completed_form.pdf';
+                link.download = 'form_completed_locked.pdf';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             }} catch (err) {{
-                alert("Error compilation layer: " + err.message);
+                alert("Compilation processing error: " + err.message);
             }}
         }});
     </script>
