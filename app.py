@@ -98,6 +98,27 @@ if uploaded_file is not None:
             scale_x, scale_y = p.rect.width / base_image.width, p.rect.height / base_image.height
             
             if element["type"] == "text":
+                # Fixed parenthesis matching bug here
                 p.insert_text(
-                    fitz.Point(element["x"] * scale_x, (element
-            
+                    fitz.Point(element["x"] * scale_x, (element["y"] + element["size"]/2) * scale_y), 
+                    element["content"], fontsize=element["size"], color=(0, 0, 1)
+                )
+            elif element["type"] == "signature":
+                sig_img = Image.fromarray(element["content"].astype('uint8'), 'RGBA')
+                img_byte_arr = io.BytesIO()
+                sig_img.save(img_byte_arr, format='PNG')
+                rect = fitz.Rect(
+                    (element["x"] - 50) * scale_x, (element["y"] - 20) * scale_y, 
+                    (element["x"] + 70) * scale_x, (element["y"] + 30) * scale_y
+                )
+                p.insert_image(rect, stream=img_byte_arr.getvalue())
+
+    st.write("---")
+    st.subheader("📥 Process Completed File")
+    st.download_button(
+        label="Download Finished Application PDF",
+        data=output_doc.write(),
+        file_name="visually_filled_form.pdf",
+        mime="application/pdf"
+        )
+                        
