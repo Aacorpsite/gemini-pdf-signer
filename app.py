@@ -4,18 +4,18 @@ import io
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 
-st.set_page_config(page_title="Simple PDF Filler & Signer", layout="wide")
-st.title("📝 Simple PDF Filler & Signer")
-st.write("Upload any document, fill out the form boxes, draw your signature, and download the finished copy instantly.")
+st.set_page_config(page_title="Direct Visual PDF Filler", layout="wide")
+st.title("🎯 Direct Tap-to-Fill PDF Signer")
+st.write("Tap anywhere directly on the PDF image below to type text or place your signature precisely where you want it.")
 
-# --- AUTO-SAVE SESSION MEMORY ---
+# --- PERSISTENT STORAGE LAYERS ---
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
-if "signature_saved" not in st.session_state:
-    st.session_state.signature_saved = None
+if "placed_elements" not in st.session_state:
+    st.session_state.placed_elements = []  # Keeps track of all added text/signatures
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload your PDF application form here:", type=["pdf"])
+# --- FILE IMPORT ---
+uploaded_file = st.file_uploader("Upload your document:", type=["pdf"])
 
 if uploaded_file is not None:
     if st.session_state.pdf_data is None:
@@ -24,77 +24,78 @@ if uploaded_file is not None:
     doc = fitz.open(stream=st.session_state.pdf_data, filetype="pdf")
     
     if len(doc) > 1:
-        page_num = st.number_input("Form Page Selector", min_value=1, max_value=len(doc), value=1) - 1
+        page_num = st.number_input("Page Selector", min_value=1, max_value=len(doc), value=1) - 1
     else:
         page_num = 0
         
     page = doc[page_num]
-    pix = page.get_pixmap(dpi=150)
+    pix = page.get_pixmap(dpi=120)  # Standardized crisp resolution
+    img_data = Image.open(io.BytesIO(pix.tobytes("png")))
+
+    st.subheader("👁️ Tap Document to Select Field Box")
     
-    # --- FIXED MOBILE LAYOUT: PREVIEW FIRST ---
-    st.subheader("👁️ Document Preview")
+    # --- INTERACTIVE CLICK CANVAS ---
+    # This sits directly on top of your PDF image background layer
+    canvas_result = st_canvas(
+        fill_color="rgba(0, 0, 255, 0.1)",  # Highlight selections slightly
+        stroke_width=2,
+        stroke_color="#0000FF",
+        background_image=img_data,
+        update_streamlit=True,
+        height=img_data.height,
+        width=img_data.width,
+        drawing_mode="point",  # Changes behavior to single-tap detection
+        point_display_radius=4,
+        key="pdf_interaction_canvas"
+    )
+
+    # --- POP-UP FIELD ENTRY CONTEXT ---
+    # Detects if your finger touched a specific coordinate on the form layout
+    if canvas_result.json_data and canvas_result.json_data["objects"]:
+        last_object = canvas_result.json_data["objects"][-1]
+        tap_x = last_object["left"]
+        tap_y = last_object["top"]
+        
+        st.write("---")
+        st.info(f"📍 Selected position on document alignment grid.")
+        
+        # Mode controller toggles between typing standard text vs stamping ink signature
+        input_mode = st.radio("What would you like to place at this spot?", ["Text / Information", "E-Signature"])
+        
+        if input_mode == "Text / Information":
+            text_to_add = st.text_input("Type your text here:")
+            font_size = st.slider("Font Size", min_value=10, max_value=24, value=14)
+            
+            if st.button("Apply Text to This Box"):
+                if text_to_add:
+                    st.session_state.placed_elements.append({
+                        "type": "text", "page": page_num, "content": text_to_add, 
+                        "x": tap_x, "y": tap_y, "size": font_size
+                    })
+                    st.success("Inserted successfully!")
+                    st.rerun()
+                    
+        elif input_mode == "E-Signature":
+            st.write("Draw inside the box below:")
+            sig_canvas = st_canvas(
+                fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#0000FF",
+                background_color="#f0f2f6", height=100, width=250, drawing_mode="freedraw", key="pop_sig"
+            )
+            if st.button("Stamp Signature onto Document Line"):
+                if sig_canvas.image_data is not None:
+                    st.session_state.placed_elements.append({
+                        "type": "signature", "page": page_num, 
+                        "content": sig_canvas.image_data, "x": tap_x, "y": tap_y
+                    })
+                    st.success("Signature stamped!")
+                    st.rerun()
+
+    # --- RENDER LAYER PROCESSOR ---
+    # Burns all your custom text and signatures back down onto the official PDF file canvas structure
     output_doc = fitz.open(stream=st.session_state.pdf_data, filetype="pdf")
     
-    if st.session_state.signature_saved and st.session_state.signature_saved["page"] == page_num:
-        sig = st.session_state.signature_saved
-        p = output_doc[sig["page"]]
-        scale_x, scale_y = p.rect.width / pix.width, p.rect.height / pix.height
-        
-        sig_img = Image.fromarray(sig["image"].astype('uint8'), 'RGBA')
-        img_byte_arr = io.BytesIO()
-        sig_img.save(img_byte_arr, format='PNG')
-        
-        rect = fitz.Rect(sig["x"] * scale_x, sig["y"] * scale_y, (sig["x"] + 120) * scale_x, (sig["y"] + 60) * scale_y)
-        p.insert_image(rect, stream=img_byte_arr.getvalue())
-
-    st.image(output_doc[page_num].get_pixmap(dpi=150).tobytes("png"), use_container_width=True)
-    
-    st.download_button(
-        label="📥 Download Finished PDF",
-        data=output_doc.write(),
-        file_name="completed_and_signed.pdf",
-        mime="application/pdf"
-    )
-    st.write("---")
-
-    # --- FIELDS & CONTROLS UNDERNEATH ---
-    widgets = list(page.widgets())
-    if widgets:
-        st.subheader("🖋️ Fill Form Fields")
-        for widget in widgets:
-            new_val = st.text_input(f"Line: '{widget.field_name}'", value=widget.field_value, key=f"fld_{widget.xref}")
-            if new_val != widget.field_value:
-                widget.field_value = new_val
-                widget.update()
-        
-        st.session_state.pdf_data = doc.write()
-        st.write("---")
-
-    st.subheader("🖊️ Draw Your Signature")
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 255, 255, 0)",
-        stroke_width=3,
-        stroke_color="#0000FF",
-        background_color="#f0f2f6",
-        height=120,
-        width=300,
-        drawing_mode="freedraw",
-        key="signature_pad"
-    )
-    
-    col_x, col_y = st.columns(2)
-    with col_x:
-        sig_x = st.number_input("Move Signature X (Left/Right)", value=50, step=10)
-    with col_y:
-        sig_y = st.number_input("Move Signature Y (Up/Down)", value=150, step=10)
-
-    if st.button("💾 Apply Signature to Document"):
-        if canvas_result.image_data is not None:
-            st.session_state.signature_saved = {
-                "page": page_num,
-                "image": canvas_result.image_data,
-                "x": sig_x,
-                "y": sig_y
-            }
-            st.success("Signature locked in place!")
-            st.rerun()
+    for element in st.session_state.placed_elements:
+        if element["page"] == page_num:
+            p = output_doc[element["page"]]
+            # Map coordination scales cleanly across high-definition view boundaries
+            scale_x, scale_y = p.rect.width / img
