@@ -1,8 +1,8 @@
 import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
-st.title("🛠️ Custom Form-Locked PDF Filler")
-st.write("Fields are now auto-aligned to prevent shifting. Tap inside any yellow box to type safely!")
+st.title("🛠️ Custom Precision PDF Filler")
+st.write("Tap EXACTLY on any black form line to type your text. No overlapping yellow boxes!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -15,65 +15,16 @@ if uploaded_file is not None:
     total_pages = len(doc)
     
     images_js_array = []
-    widgets_html_by_page = {p: "" for p in range(total_pages)}
-    
     for page_num in range(total_pages):
         page = doc[page_num]
-        rotation = page.rotation
-        
         pix = page.get_pixmap(dpi=150) 
         img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
         images_js_array.append(f"\"data:image/png;base64,{img_data}\"")
         
-        img_w = pix.width
-        img_h = pix.height
-        
-        page_width = page.rect.width if rotation in [0, 180] else page.rect.height
-        page_height = page.rect.height if rotation in [0, 180] else page.rect.width
-
-        for widget in page.widgets():
-            r = widget.rect
-            
-            left_pct = (r.x0 / page_width) * 100
-            right_pct = (r.x1 / page_width) * 100
-            width_pct = right_pct - left_pct
-            
-            top_pct = (r.y0 / page_height) * 100
-            bottom_pct = (r.y1 / page_height) * 100
-            height_pct = bottom_pct - top_pct
-            
-            if height_pct > 4.5:
-                height_pct = 3.2
-            if height_pct < 1.8:
-                height_pct = 2.0
-                
-            f_id = widget.field_name.replace('"', '&quot;')
-            raw_val = widget.field_value or ""
-            if len(raw_val.strip()) <= 2 and raw_val.strip().lower() in ['f', 'ff', 't', 'on', 'off', '1', '0']:
-                current_val = ""
-            else:
-                current_val = raw_val
-
-            widgets_html_by_page[page_num] += f"""
-            <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
-                style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
-                       max-width: {width_pct}%; box-sizing: border-box;
-                       background-color: rgba(255, 235, 59, 0.16); border: 1px dashed #d4af37; 
-                       border-radius: 1px; font-size: 9px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
-                       padding: 0px 2px; outline: none; z-index: 10; line-height: normal;"
-            />
-            """
-
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
-    
-    # FIXED: Cleaned up structural string handling to avoid syntax confusion
-    all_inputs_html = ""
-    for p_idx, html_content in widgets_html_by_page.items():
-        layer_visibility = "block" if p_idx == 0 else "none"
-        all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {layer_visibility}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_content}\n</div>'
 
-    # --- CLIENT-SIDE ENGINE ---
+    # --- PURE CANVAS DIRECT TAP INTERFACE ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -90,10 +41,8 @@ if uploaded_file is not None:
         </div>
         
         <div id="canvas-container" style="position: relative; display: inline-block; width: 100%; max-width: {pix.width}px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc; touch-action: manipulation;">
-            <img id="pdf-bg" src={images_js_array[0]} style="display: block; width: 100%; height: auto; pointer-events: none;" />
-            <div id="inputs-viewport" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
-                {all_inputs_html}
-            </div>
+            <img id="pdf-bg" src={images_js_array[0]} style="display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none;" />
+            <div id="text-layers-container" style="position: absolute; top:0; left:0; width:100%; height:100%;"></div>
         </div>
     </div>
 
@@ -109,78 +58,160 @@ if uploaded_file is not None:
         const pageIndicator = document.getElementById('pageIndicator');
         const bgImg = document.getElementById('pdf-bg');
         const downloadBtn = document.getElementById('downloadBtn');
+        const layersContainer = document.getElementById('text-layers-container');
+
+        // Persistent memory dictionary tracking input variables directly in browser memory
+        let formMemory = [];
+        let activeInput = null;
+
+        function renderPageText() {{
+            layersContainer.innerHTML = '';
+            
+            // Re-draw any existing text placed on the current page view
+            formMemory.forEach((entry, idx) => {{
+                if (entry.pageIdx !== currentPage) return;
+                
+                const label = document.createElement('div');
+                label.innerText = entry.text;
+                label.style.position = 'absolute';
+                label.style.left = `calc(${{entry.pctX * 100}}% + 2px)`;
+                label.style.top = `calc(${{entry.pctY * 100}}% - 11px)`;
+                label.style.fontSize = '12px';
+                label.style.fontFamily = 'Helvetica, sans-serif';
+                label.style.fontWeight = 'bold';
+                label.style.color = '#0000FF';
+                label.style.whiteSpace = 'nowrap';
+                
+                // Add removal ability if a user clicks a placed word
+                label.style.cursor = 'pointer';
+                label.onclick = (e) => {{
+                    e.stopPropagation();
+                    formMemory.splice(idx, 1);
+                    renderPageText();
+                }};
+                
+                layersContainer.appendChild(label);
+            }});
+        }}
+
+        // Direct tap positioning rule
+        layersContainer.addEventListener('click', function(e) {{
+            if (activeInput) {{
+                commitActiveInput();
+                return;
+            }}
+
+            const rect = bgImg.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            const pctX = clickX / rect.width;
+            const pctY = clickY / rect.height;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.style.position = 'absolute';
+            input.style.left = clickX + 'px';
+            input.style.top = (clickY - 14) + 'px';
+            input.style.fontSize = '12px';
+            input.style.fontFamily = 'Helvetica';
+            input.style.color = '#0000FF';
+            input.style.fontWeight = 'bold';
+            input.style.border = 'none';
+            input.style.borderBottom = '1.5px solid #0055FF';
+            input.style.backgroundColor = 'rgba(255, 255, 200, 0.85)';
+            input.style.outline = 'none';
+            input.style.padding = '1px 2px';
+            input.style.zIndex = '1000';
+            
+            layersContainer.appendChild(input);
+            input.focus();
+            
+            activeInput = {{ element: input, pctX: pctX, pctY: pctY }};
+
+            input.addEventListener('keydown', function(evt) {{
+                if (evt.key === 'Enter') commitActiveInput();
+            }});
+            
+            e.stopPropagation();
+        }});
+
+        function commitActiveInput() {{
+            if (!activeInput) return;
+            const val = activeInput.element.value.trim();
+            if (val.length > 0) {{
+                formMemory.push({{
+                    text: val,
+                    pctX: activeInput.pctX,
+                    pctY: activeInput.pctY,
+                    pageIdx: currentPage
+                }});
+            }}
+            activeInput.element.remove();
+            activeInput = null;
+            renderPageText();
+        }}
 
         function updatePageDisplay() {{
+            if (activeInput) commitActiveInput();
             bgImg.src = pageImages[currentPage];
             pageIndicator.innerText = `Page ${{currentPage + 1}} of ${{totalPages}}`;
-            
-            for(let i=0; i<totalPages; i++) {{
-                const layer = document.getElementById(`layer-${{i}}`);
-                if(layer) {{
-                    layer.style.display = (i === currentPage) ? "block" : "none";
-                }}
-            }}
+            renderPageText();
             
             prevBtn.disabled = (currentPage === 0);
             nextBtn.disabled = (currentPage === totalPages - 1);
         }}
 
-        prevBtn.addEventListener('click', () => {{
+        prevBtn.addEventListener('click', (e) => {{
+            e.stopPropagation();
             if(currentPage > 0) {{ currentPage--; updatePageDisplay(); }}
         }});
 
-        nextBtn.addEventListener('click', () => {{
+        nextBtn.addEventListener('click', (e) => {{
+            e.stopPropagation();
             if(currentPage < totalPages - 1) {{ currentPage++; updatePageDisplay(); }}
         }});
 
         updatePageDisplay();
 
-        downloadBtn.addEventListener('click', async function() {{
+        downloadBtn.addEventListener('click', async function(e) {{
+            e.stopPropagation();
+            if (activeInput) commitActiveInput();
+            
             try {{
                 const pdfDataBytes = Uint8Array.from(atob('{pdf_base64}'), c => c.charCodeAt(0));
                 const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);
                 const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
                 const pages = pdfDoc.getPages();
                 
-                const inputs = document.querySelectorAll('#canvas-container input');
-                
-                for (let input of inputs) {{
-                    const fieldName = input.getAttribute('data-field');
-                    const pageIdx = parseInt(input.getAttribute('data-page'));
-                    const textValue = input.value.trim();
+                for (let entry of formMemory) {{
+                    const targetPage = pages[entry.pageIdx];
+                    const {{ width, height }} = targetPage.getSize();
                     
-                    if (textValue.length > 0) {{
-                        const targetPage = pages[pageIdx];
-                        const {{ width, height }} = targetPage.getSize();
-                        
-                        const leftPct = parseFloat(input.style.left) / 100;
-                        const topPct = parseFloat(input.style.top) / 100;
-                        
-                        const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 8.5; 
+                    const pdfX = entry.pctX * width;
+                    const pdfY = height - (entry.pctY * height) - 3; // Precise vector alignment rule
 
-                        targetPage.drawText(textValue, {{
-                            x: pdfX,
-                            y: pdfY,
-                            size: 8, 
-                            font: helveticaFont,
-                            color: PDFLib.rgb(0, 0, 0.7)
-                        }});
-                    }}
+                    targetPage.drawText(entry.text, {{
+                        x: pdfX,
+                        y: pdfY,
+                        size: 10, 
+                        font: helveticaFont,
+                        color: PDFLib.rgb(0, 0, 0.8)
+                    }});
                 }}
 
                 const savedPdfBytes = await pdfDoc.save();
                 const blob = new Blob([savedPdfBytes], {{ type: 'application/pdf' }});
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = 'housing_application_filled.pdf';
+                link.download = 'form_completed.pdf';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             }} catch (err) {{
-                alert("Processing Error: " + err.message);
+                alert("Download Error: " + err.message);
             }}
         }});
     </script>
     """
-    st.components.v1.html(filler_html, height=img_h + 150, width=img_w + 50, scrolling=True)
+    st.components.v1.html(filler_html, height=pix.height + 150, width=pix.width + 50, scrolling=True)
