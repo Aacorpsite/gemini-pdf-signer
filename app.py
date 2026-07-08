@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Precision PDF Filler")
-st.write("Tap EXACTLY on any black form line to type. Typing fields are now size-constrained perfectly!")
+st.write("Tap EXACTLY on any black form line to type. Typing boxes now dynamically match the length of your text!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -24,7 +24,7 @@ if uploaded_file is not None:
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
 
-    # --- PURE CANVAS DIRECT TAP INTERFACE WITH HARD MAXIMUM WIDTHS ---
+    # --- CANVAS DIRECT TAP INTERFACE WITH AUTOFIT TEXT FIELD WIDTHS ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -110,10 +110,10 @@ if uploaded_file is not None:
             input.style.left = clickX + 'px';
             input.style.top = (clickY - 14) + 'px';
             
-            // --- FIXED: BOUND BOX SIZE CONTROLS ---
-            // Hard-locked max width limits prevent input box from expanding all over the sheet layout
-            input.style.width = '180px';
-            input.style.maxWidth = '220px';
+            // --- FIXED: AUTO-GROWING ACCORDING TO TEXT SIZE ---
+            input.style.width = '30px'; // Starts tiny
+            input.style.minWidth = '20px';
+            input.style.maxWidth = '250px';
             
             input.style.fontSize = '12px';
             input.style.fontFamily = 'Helvetica';
@@ -130,6 +130,12 @@ if uploaded_file is not None:
             input.focus();
             
             activeInput = {{ element: input, pctX: pctX, pctY: pctY }};
+
+            // Dynamic scaling listener script
+            input.addEventListener('input', function() {{
+                // Expands box width to match text content automatically
+                this.style.width = Math.max(30, (this.value.length + 1) * 7.5) + 'px';
+            }});
 
             input.addEventListener('keydown', function(evt) {{
                 if (evt.key === 'Enter') commitActiveInput();
