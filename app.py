@@ -26,33 +26,30 @@ if uploaded_file is not None:
         img_w = pix.width
         img_h = pix.height
         
-        # Calculate scales based on real PDF page structures
-        scale_x = img_w / page.rect.width
-        scale_y = img_h / page.rect.height
-        
         for widget in page.widgets():
             r = widget.rect
             
-            # Lock the exact position percentages so they stay perfectly matched to the image bounds
             left_pct = (r.x0 / page.rect.width) * 100
             top_pct = (r.y0 / page.rect.height) * 100
             width_pct = ((r.x1 - r.x0) / page.rect.width) * 100
             height_pct = ((r.y1 - r.y0) / page.rect.height) * 100
             
-            # Provide an optimal finger-touch target padding for mobile screens
-            if height_pct < 2.0:
-                height_pct = 2.4
+            # --- FIXED: HARD CAP HEIGHTS TO STOP OVERLAPPING ---
+            # Shuts down vertical bleeding onto secondary phone rows completely
+            if height_pct > 3.0:
+                height_pct = 2.6
+            elif height_pct < 1.6:
+                height_pct = 1.8
                 
             f_id = widget.field_name.replace('"', '&quot;')
             
-            # Suppress any background computer-code placeholder text noise
             raw_val = widget.field_value or ""
             if len(raw_val.strip()) <= 2 and raw_val.strip().lower() in ['f', 'ff', 't', 'on', 'off', '1', '0']:
                 current_val = ""
             else:
                 current_val = raw_val
 
-            # Hard-lock explicit maximum layout bounds so typing never causes visual stretching or overlapping
+            # FIXED STYLE: Smaller 8.5px font, absolute padding strip, and overflow hidden prevents box expansions
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
                 style="position: absolute; 
@@ -63,17 +60,20 @@ if uploaded_file is not None:
                        max-width: {width_pct}%; 
                        max-height: {height_pct}%;
                        box-sizing: border-box;
-                       background-color: rgba(255, 235, 59, 0.3); 
+                       background-color: rgba(255, 235, 59, 0.22); 
                        border: 1px solid #ffc107; 
-                       border-radius: 2px; 
-                       font-size: 10px; 
+                       border-radius: 1px; 
+                       font-size: 8.5px; 
                        font-family: Helvetica, sans-serif; 
                        font-weight: bold; 
                        color: #0000FF;
-                       padding: 0px 4px; 
+                       padding: 0px 1px; 
+                       margin: 0;
                        outline: none; 
                        z-index: 10; 
-                       line-height: normal;"
+                       line-height: normal;
+                       overflow: hidden;
+                       text-overflow: clip;"
             />
             """
 
@@ -85,7 +85,7 @@ if uploaded_file is not None:
         layer_visibility = "block" if p_idx == 0 else "none"
         all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {layer_visibility}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_content}\n</div>'
 
-    # --- COMPLETE MULTI-PAGE DESKTOP & MOBILE COMPATIBLE CANVAS LAYER ---
+    # --- CANVAS DESPATCH LAYER ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -169,12 +169,12 @@ if uploaded_file is not None:
                         const topPct = parseFloat(input.style.top) / 100;
                         
                         const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 10; 
+                        const pdfY = height - (topPct * height) - 8.5; // Fine baseline landing index
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
                             y: pdfY,
-                            size: 9, 
+                            size: 8.5, 
                             font: helveticaFont,
                             color: PDFLib.rgb(0, 0, 0.75)
                         }});
