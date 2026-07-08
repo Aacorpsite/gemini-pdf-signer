@@ -1,117 +1,172 @@
 import streamlit as st
-import fitz  # PyMuPDF
-import io
-import base64
-from PIL import Image
 
-st.set_page_config(page_title="Professional PDF Filler", layout="wide")
-st.title("🎯 Direct Visual PDF Signer")
-st.write("Tap directly inside any yellow dashed box to type. Press 'Done' or 'Enter' on your keyboard to lock it in.")
+st.set_page_config(page_title="My Own Free PDF Filler", layout="wide")
+st.title("🛠️ My Own Free PDF Filler")
+st.write("Upload a PDF. Click anywhere directly on the page to type your text. When finished, hit Download.")
 
-# --- PERSISTENT STORAGE LAYER ---
-if "pdf_data" not in st.session_state:
-    st.session_state.pdf_data = None
-if "field_values" not in st.session_state:
-    st.session_state.field_values = {}
-if "current_page" not in st.session_state:
-    st.session_state.current_page = 0
-
-uploaded_file = st.file_uploader("Upload your document:", type=["pdf"])
+# Simple file uploader to feed the local browser application
+uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
 if uploaded_file is not None:
-    if st.session_state.pdf_data is None:
-        st.session_state.pdf_data = uploaded_file.read()
-
-    doc = fitz.open(stream=st.session_state.pdf_data, filetype="pdf")
+    import base64
+    import fitz  # PyMuPDF (used only to render the initial sharp layout pages)
+    
+    # Read the file data into a clean browser data string stream
+    pdf_bytes = uploaded_file.read()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    
+    # Handle multi-page documents safely
     total_pages = len(doc)
-
-    # --- MOBILE-KEYBOARD SAVE TRIGGER ---
-    query_params = st.query_params
-    if "update_field" in query_params:
-        f_name = query_params["update_field"]
-        f_val = query_params.get("value", "")
-        
-        st.session_state.field_values[f_name] = f_val
-        
-        # Burn value directly into the PDF structure on its correct page layer
-        for p_idx in range(total_pages):
-            for widget in doc[p_idx].widgets():
-                if widget.field_name == f_name:
-                    widget.field_value = f_val
-                    widget.update()
-                    break
-        st.session_state.pdf_data = doc.write()
-        st.query_params.clear()
-        st.rerun()
-
-    # --- PAGE NAVIGATION ---
-    if total_pages > 1:
-        st.write("---")
-        col_prev, col_status, col_next = st.columns([1, 2, 1])
-        with col_prev:
-            if st.button("⬅️ Previous Page", use_container_width=True, disabled=(st.session_state.current_page == 0)):
-                st.session_state.current_page -= 1
-                st.rerun()
-        with col_status:
-            st.markdown(f"<h4 style='text-align: center; margin: 0;'>Page {st.session_state.current_page + 1} of {total_pages}</h4>", unsafe_allow_html=True)
-        with col_next:
-            if st.button("Next Page ➡️", use_container_width=True, disabled=(st.session_state.current_page == total_pages - 1)):
-                st.session_state.current_page += 1
-                st.rerun()
-        st.write("---")
-
-    # Render current page view frame assets
-    page = doc[st.session_state.current_page]
-    pix = page.get_pixmap(dpi=140)
+    page_num = st.number_input("Select Page", min_value=1, max_value=total_pages, value=1) - 1
     
-    img_bytes = pix.tobytes("png")
-    encoded_img = base64.b64encode(img_bytes).decode("utf-8")
+    # Convert the selected page to a high-quality background image string
+    page = doc[page_num]
+    pix = page.get_pixmap(dpi=150)
+    img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
     
-    img_w = pix.width
-    img_h = pix.height
-    scale_x = img_w / page.rect.width
-    scale_y = img_h / page.rect.height
+    # Pass the raw PDF bytes straight to the local browser engine
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-    # Build clean interactive typing boxes exactly over form shapes
-    input_elements_html = ""
-    for widget in page.widgets():
-        r = widget.rect
-        x = r.x0 * scale_x
-        y = r.y0 * scale_y
-        w = (r.x1 - r.x0) * scale_x
-        h = (r.y1 - r.y0) * scale_y
+    # --- THE CLIENT-SIDE INDESTRUCTIBLE FILLER ENGINE ---
+    # This entire script runs directly inside your phone's memory. It cannot drop connection or lose data.
+    filler_html = f"""
+    <div id="wrapper" style="position: relative; max-width: 100%; overflow-x: auto; text-align: center; font-family: Arial, sans-serif;">
+        <div style="margin-bottom: 15px;">
+            <button id="downloadBtn" style="padding: 12px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+                📥 Download Completed PDF
+            </button>
+        </div>
         
-        if h < 16:
-            h = 18
-            
-        current_val = st.session_state.field_values.get(widget.field_name, widget.field_value or "")
-        
-        # Uses 'onchange' to ensure typing saves instantly when hitting return/done on mobile
-        input_elements_html += f"""
-        <input type="text" value="{current_val}" 
-            style="position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; 
-                   background-color: rgba(255, 235, 59, 0.12); border: 1.5px dashed #ffc107; 
-                   border-radius: 2px; font-size: 13px; font-family: sans-serif; color: #0000FF;
-                   padding: 0px 2px; box-sizing: border-box;"
-            onchange="parent.window.location.search = '?update_field=' + encodeURIComponent('{widget.field_name}') + '&value=' + encodeURIComponent(this.value);"
-        />
-        """
-
-    workspace_html = f"""
-    <div style="position: relative; width: {img_w}px; height: {img_h}px; margin: 0 auto; user-select: none;">
-        <img src="data:image/png;base64,{encoded_img}" style="width: 100%; height: 100%; display: block;" />
-        {input_elements_html}
+        <div id="canvas-container" style="position: relative; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc;">
+            <img id="pdf-bg" src="data:image/png;base64,{img_data}" style="display: block; max-width: 100%; height: auto;" />
+        </div>
     </div>
-    """
-    
-    st.components.v1.html(workspace_html, height=img_h + 20, width=img_w + 20, scrolling=True)
 
-    # --- DOWNLOAD EXPORT CONTROLLER ---
-    st.write("---")
-    st.download_button(
-        label="📥 Download Completed PDF",
-        data=st.session_state.pdf_data,
-        file_name="completed_application.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+
+    <script>
+        const canvasContainer = document.getElementById('canvas-container');
+        const bgImg = document.getElementById('pdf-bg');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        // This array safely locks every piece of text you type into your phone's local active memory loop
+        let typedEntries = [];
+        let currentInput = null;
+
+        // Capture direct phone finger taps perfectly right on the form lines
+        canvasContainer.addEventListener('click', function(e) {{
+            if (e.target !== bgImg && e.target !== canvasContainer) return;
+            
+            if (currentInput) {{
+                commitCurrentInput();
+            }}
+
+            const rect = bgImg.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            // Calculate exact percentage scales to ensure typing scales beautifully on all screens
+            const pctX = clickX / rect.width;
+            const pctY = clickY / rect.height;
+
+            // Spawn an interactive native overlay input field right under your finger tip
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.style.position = 'absolute';
+            input.style.left = clickX + 'px';
+            input.style.top = (clickY - 10) + 'px';
+            input.style.fontSize = '14px';
+            input.style.fontFamily = 'Helvetica';
+            input.style.color = '#0000FF';
+            input.style.border = '1px dashed #0055FF';
+            input.style.backgroundColor = 'rgba(255, 255, 150, 0.4)';
+            input.style.padding = '2px';
+            input.style.outline = 'none';
+            input.style.zIndex = '1000';
+            
+            canvasContainer.appendChild(input);
+            input.focus();
+            currentInput = {{ element: input, pctX: pctX, pctY: pctY }};
+
+            // Force keyboard enter button to instantly save
+            input.addEventListener('keydown', function(evt) {{
+                if (evt.key === 'Enter') {{
+                    commitCurrentInput();
+                }}
+            }});
+        }});
+
+        function commitCurrentInput() {{
+            if (!currentInput) return;
+            const text = currentInput.element.value.trim();
+            if (text.length > 0) {{
+                // Lock text metadata safely into memory arrays
+                typedEntries.push({{
+                    text: text,
+                    pctX: currentInput.pctX,
+                    pctY: currentInput.pctY,
+                    pageIdx: {page_num}
+                }});
+                
+                // Solidify the entry visually right over the document line
+                const textLabel = document.createElement('div');
+                textLabel.innerText = text;
+                textLabel.style.position = 'absolute';
+                textLabel.style.left = currentInput.element.style.left;
+                textLabel.style.top = currentInput.element.style.top;
+                textLabel.style.fontSize = '14px';
+                textLabel.style.fontFamily = 'Helvetica';
+                textLabel.style.color = '#0000FF';
+                textLabel.style.pointerEvents = 'none';
+                canvasContainer.appendChild(textLabel);
+            }}
+            currentInput.element.remove();
+            currentInput = null;
+        }}
+
+        // --- MASTER DIRECT LOCAL WRITER AND SAVER ---
+        downloadBtn.addEventListener('click', async function() {{
+            if (currentInput) commitCurrentInput();
+            
+            try {{
+                // Load the original raw document data bytes inside the browser engine sandbox
+                const pdfDataBytes = Uint8Array.from(atob('{pdf_base64}'), c => c.charCodeAt(0));
+                const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);
+                const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+                const pages = pdfDoc.getPages();
+
+                // Directly map user coordinate entries back to raw vector space coordinates
+                for (let entry of typedEntries) {{
+                    const targetPage = pages[entry.pageIdx];
+                    const {{ width, height }} = targetPage.getSize();
+                    
+                    const pdfX = entry.pctX * width;
+                    // PDF coordinates measure from the bottom up, so we invert the height metric perfectly
+                    const pdfY = height - (entry.pctY * height) - 3; 
+
+                    targetPage.drawText(entry.text, {{
+                        x: pdfX,
+                        y: pdfY,
+                        size: 11,
+                        font: helveticaFont,
+                        color: PDFLib.rgb(0, 0, 1) // Clean professional dark blue text stamp
+                    }});
+                }}
+
+                // Generate file bytes dynamically right inside your local phone cache
+                const savedPdfBytes = await pdfDoc.save();
+                const blob = new Blob([savedPdfBytes], {{ type: 'application/pdf' }});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'my_completed_form.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }} catch (err) {{
+                alert("Error compilation layer: " + err.message);
+            }}
+        }});
+    </script>
+    """
+    # Deploy the custom engine space iframe safely
+    st.components.v1.html(filler_html, height=pix.height + 100, width=pix.width + 50, scrolling=True)
