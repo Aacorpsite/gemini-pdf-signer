@@ -19,11 +19,8 @@ if uploaded_file is not None:
     
     for page_num in range(total_pages):
         page = doc[page_num]
-        
-        # Matrix normalization fixes rotation alignment shifts automatically
         rotation = page.rotation
         
-        # FIXED: Removed the invalid 'rotation=0' keyword argument to resolve the TypeError
         pix = page.get_pixmap(dpi=150) 
         img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
         images_js_array.append(f"\"data:image/png;base64,{img_data}\"")
@@ -31,12 +28,10 @@ if uploaded_file is not None:
         img_w = pix.width
         img_h = pix.height
         
-        # Normalize target geometry scale matching
         page_width = page.rect.width if rotation in [0, 180] else page.rect.height
         page_height = page.rect.height if rotation in [0, 180] else page.rect.width
 
         for widget in page.widgets():
-            # Rect transformation normalizes coordinates across rotated form templates
             r = widget.rect
             
             left_pct = (r.x0 / page_width) * 100
@@ -47,7 +42,6 @@ if uploaded_file is not None:
             bottom_pct = (r.y1 / page_height) * 100
             height_pct = bottom_pct - top_pct
             
-            # Restricts extreme vertical stretching on split columns
             if height_pct > 4.5:
                 height_pct = 3.2
             if height_pct < 1.8:
@@ -60,7 +54,6 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # Hard-locked style rules keep text small (9px) and crisp inside field boundaries
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
                 style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
@@ -74,6 +67,120 @@ if uploaded_file is not None:
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
     
+    # FIXED: Cleaned up structural string handling to avoid syntax confusion
     all_inputs_html = ""
     for p_idx, html_content in widgets_html_by_page.items():
-        all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {"block" if p_idx == 0 else "none"}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_
+        layer_visibility = "block" if p_idx == 0 else "none"
+        all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {layer_visibility}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_content}\n</div>'
+
+    # --- CLIENT-SIDE ENGINE ---
+    filler_html = f"""
+    <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
+        
+        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+            <button id="prevBtn" style="padding: 10px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">⬅️ Previous Page</button>
+            <span id="pageIndicator" style="font-size: 16px; font-weight: bold; min-width: 100px;">Page 1 of {total_pages}</span>
+            <button id="nextBtn" style="padding: 10px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">Next Page ➡️</button>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+            <button id="downloadBtn" style="padding: 14px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">
+                📥 Download Completed PDF
+            </button>
+        </div>
+        
+        <div id="canvas-container" style="position: relative; display: inline-block; width: 100%; max-width: {pix.width}px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc; touch-action: manipulation;">
+            <img id="pdf-bg" src={images_js_array[0]} style="display: block; width: 100%; height: auto; pointer-events: none;" />
+            <div id="inputs-viewport" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">
+                {all_inputs_html}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+
+    <script>
+        const pageImages = [{js_images_stream}];
+        let currentPage = 0;
+        const totalPages = {total_pages};
+
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageIndicator = document.getElementById('pageIndicator');
+        const bgImg = document.getElementById('pdf-bg');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        function updatePageDisplay() {{
+            bgImg.src = pageImages[currentPage];
+            pageIndicator.innerText = `Page ${{currentPage + 1}} of ${{totalPages}}`;
+            
+            for(let i=0; i<totalPages; i++) {{
+                const layer = document.getElementById(`layer-${{i}}`);
+                if(layer) {{
+                    layer.style.display = (i === currentPage) ? "block" : "none";
+                }}
+            }}
+            
+            prevBtn.disabled = (currentPage === 0);
+            nextBtn.disabled = (currentPage === totalPages - 1);
+        }}
+
+        prevBtn.addEventListener('click', () => {{
+            if(currentPage > 0) {{ currentPage--; updatePageDisplay(); }}
+        }});
+
+        nextBtn.addEventListener('click', () => {{
+            if(currentPage < totalPages - 1) {{ currentPage++; updatePageDisplay(); }}
+        }});
+
+        updatePageDisplay();
+
+        downloadBtn.addEventListener('click', async function() {{
+            try {{
+                const pdfDataBytes = Uint8Array.from(atob('{pdf_base64}'), c => c.charCodeAt(0));
+                const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);
+                const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+                const pages = pdfDoc.getPages();
+                
+                const inputs = document.querySelectorAll('#canvas-container input');
+                
+                for (let input of inputs) {{
+                    const fieldName = input.getAttribute('data-field');
+                    const pageIdx = parseInt(input.getAttribute('data-page'));
+                    const textValue = input.value.trim();
+                    
+                    if (textValue.length > 0) {{
+                        const targetPage = pages[pageIdx];
+                        const {{ width, height }} = targetPage.getSize();
+                        
+                        const leftPct = parseFloat(input.style.left) / 100;
+                        const topPct = parseFloat(input.style.top) / 100;
+                        
+                        const pdfX = leftPct * width;
+                        const pdfY = height - (topPct * height) - 8.5; 
+
+                        targetPage.drawText(textValue, {{
+                            x: pdfX,
+                            y: pdfY,
+                            size: 8, 
+                            font: helveticaFont,
+                            color: PDFLib.rgb(0, 0, 0.7)
+                        }});
+                    }}
+                }}
+
+                const savedPdfBytes = await pdfDoc.save();
+                const blob = new Blob([savedPdfBytes], {{ type: 'application/pdf' }});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'housing_application_filled.pdf';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }} catch (err) {{
+                alert("Processing Error: " + err.message);
+            }}
+        }});
+    </script>
+    """
+    st.components.v1.html(filler_html, height=img_h + 150, width=img_w + 50, scrolling=True)
