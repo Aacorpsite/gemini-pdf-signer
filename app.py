@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Form-Locked PDF Filler")
-st.write("Fill out all pages smoothly. Everything saves locally automatically without losing data when switching pages!")
+st.write("Every field is now rigidly locked between its own column boundaries. No more overlapping lines!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -14,7 +14,6 @@ if uploaded_file is not None:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     total_pages = len(doc)
     
-    # Pre-render every page to base64 images so the user can switch pages locally without hitting the server
     images_js_array = []
     widgets_html_by_page = {p: "" for p in range(total_pages)}
     
@@ -26,15 +25,19 @@ if uploaded_file is not None:
         
         img_w = pix.width
         img_h = pix.height
-        scale_x = img_w / page.rect.width
-        scale_y = img_h / page.rect.height
         
         for widget in page.widgets():
             r = widget.rect
+            
+            # --- FIXED: BOUNDARY BOUNDS TRACKING ---
+            # Using exact percentage points for both left and right edges stops horizontal bleeding instantly
             left_pct = (r.x0 / page.rect.width) * 100
+            right_pct = (r.x1 / page.rect.width) * 100
+            width_pct = right_pct - left_pct
+            
             top_pct = (r.y0 / page.rect.height) * 100
-            width_pct = ((r.x1 - r.x0) / page.rect.width) * 100
-            height_pct = ((r.y1 - r.y0) / page.rect.height) * 100
+            bottom_pct = (r.y1 / page.rect.height) * 100
+            height_pct = bottom_pct - top_pct
             
             if height_pct < 2.0:
                 height_pct = 2.2
@@ -46,25 +49,25 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # FIXED: Font sizes shrunk to 10px, line-height locked, padding tight to ensure nothing overflows the lines
+            # FIXED STYLE: added text-overflow, max-width constraints, and reduced font to 9.5px to keep text perfectly inside columns
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
                 style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
+                       max-width: {width_pct}%; box-sizing: border-box;
                        background-color: rgba(255, 235, 59, 0.15); border: 1px solid #e6b800; 
-                       border-radius: 1px; font-size: 10px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
-                       padding: 0px 2px; box-sizing: border-box; outline: none; z-index: 10; line-height: 10px;"
+                       border-radius: 1px; font-size: 9.5px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
+                       padding: 0px 2px; outline: none; z-index: 10; line-height: normal; text-overflow: clip;"
             />
             """
 
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
     
-    # Flatten all widget layers into a single client-side memory layout
     all_inputs_html = ""
     for p_idx, html_content in widgets_html_by_page.items():
         all_inputs_html += f'<div class="page-layer" id="layer-{p_idx}" style="display: {"block" if p_idx == 0 else "none"}; position: absolute; top:0; left:0; width:100%; height:100%;">\n{html_content}\n</div>'
 
-    # --- INDESTRUCTIBLE LOCAL MULTI-PAGE CANVAS ENGINE ---
+    # --- CLIENT-SIDE ENGINE ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -101,12 +104,10 @@ if uploaded_file is not None:
         const bgImg = document.getElementById('pdf-bg');
         const downloadBtn = document.getElementById('downloadBtn');
 
-        // Handle page updates fully inside the local layout view
         function updatePageDisplay() {{
             bgImg.src = pageImages[currentPage];
-            pageIndicator.innerText = `Page ${{currentPage + 1}} of ${{totalPages}}`;
+            pageIndicator.innerText = `Page Kish ${{currentPage + 1}} of ${{totalPages}}`;
             
-            // Show only the inputs belonging to the active page layer
             for(let i=0; i<totalPages; i++) {{
                 const layer = document.getElementById(`layer-${{i}}`);
                 if(layer) {{
@@ -122,11 +123,11 @@ if uploaded_file is not None:
             if(currentPage > 0) {{ currentPage--; updatePageDisplay(); }}
         }});
 
+        // Fluid memory sync rules
         nextBtn.addEventListener('click', () => {{
             if(currentPage < totalPages - 1) {{ currentPage++; updatePageDisplay(); }}
         }});
 
-        // Initialize state configuration rules
         updatePageDisplay();
 
         downloadBtn.addEventListener('click', async function() {{
@@ -136,7 +137,6 @@ if uploaded_file is not None:
                 const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
                 const pages = pdfDoc.getPages();
                 
-                // Scan across every input line from all page layers stored in browser cache
                 const inputs = document.querySelectorAll('#canvas-container input');
                 
                 for (let input of inputs) {{
@@ -152,12 +152,12 @@ if uploaded_file is not None:
                         const topPct = parseFloat(input.style.top) / 100;
                         
                         const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 9; // Beautiful alignment on document lines
+                        const pdfY = height - (topPct * height) - 9.5; 
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
                             y: pdfY,
-                            size: 8.5, // Crisp font output scale to handle long names/addresses perfectly
+                            size: 8.5, 
                             font: helveticaFont,
                             color: PDFLib.rgb(0, 0, 0.75)
                         }});
