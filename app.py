@@ -60,13 +60,11 @@ if uploaded_file is not None:
 
     preview_image = Image.alpha_composite(base_image, highlight_layer).convert("RGB")
 
-    # --- TOP-LEVEL INLINE TYPING CONTEXT ---
-    # This renders right at the top of your app so you don't have to scroll down to type
+    # --- FIXED INLINE TYPING CONTEXT ---
     if st.session_state.active_field:
         st.write("---")
         st.markdown(f"🖋️ **Selected Form Box ID:** `{st.session_state.active_field}`")
         
-        # Look up current value safely from the document metadata
         current_val = st.session_state.field_values.get(st.session_state.active_field, "")
         if not current_val:
             for w in widgets:
@@ -74,14 +72,18 @@ if uploaded_file is not None:
                     current_val = w.field_value or ""
                     break
                     
-        user_input_text = st.text_input("Start typing information:", value=current_val, key="inline_input_field", autofocus=True)
+        # FIX: Appending the active_field string name ensures the tracking key is always completely unique
+        user_input_text = st.text_input(
+            "Start typing information:", 
+            value=current_val, 
+            key=f"input_lock_{st.session_state.active_field}"
+        )
         
         col_save, col_clear = st.columns(2)
         with col_save:
-            if st.button("Save Value 💾", use_container_width=True):
+            if st.button("Apply Field Text 💾", use_container_width=True):
                 st.session_state.field_values[st.session_state.active_field] = user_input_text
                 
-                # Apply change directly to file instance
                 for widget in page.widgets():
                     if widget.field_name == st.session_state.active_field:
                         widget.field_value = user_input_text
@@ -91,7 +93,7 @@ if uploaded_file is not None:
                 st.session_state.active_field = None
                 st.rerun()
         with col_clear:
-            if st.button("Cancel ❌", use_container_width=True):
+            if st.button("Cancel / Close ❌", use_container_width=True):
                 st.session_state.active_field = None
                 st.rerun()
         st.write("---")
