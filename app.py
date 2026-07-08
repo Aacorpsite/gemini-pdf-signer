@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Precision PDF Filler")
-st.write("Tap EXACTLY on any black form line to type your text. No overlapping yellow boxes!")
+st.write("Tap EXACTLY on any black form line to type. Typing fields are now size-constrained perfectly!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -24,7 +24,7 @@ if uploaded_file is not None:
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
     js_images_stream = ",\n".join(images_js_array)
 
-    # --- PURE CANVAS DIRECT TAP INTERFACE ---
+    # --- PURE CANVAS DIRECT TAP INTERFACE WITH HARD MAXIMUM WIDTHS ---
     filler_html = f"""
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         
@@ -60,14 +60,12 @@ if uploaded_file is not None:
         const downloadBtn = document.getElementById('downloadBtn');
         const layersContainer = document.getElementById('text-layers-container');
 
-        // Persistent memory dictionary tracking input variables directly in browser memory
         let formMemory = [];
         let activeInput = null;
 
         function renderPageText() {{
             layersContainer.innerHTML = '';
             
-            // Re-draw any existing text placed on the current page view
             formMemory.forEach((entry, idx) => {{
                 if (entry.pageIdx !== currentPage) return;
                 
@@ -82,7 +80,6 @@ if uploaded_file is not None:
                 label.style.color = '#0000FF';
                 label.style.whiteSpace = 'nowrap';
                 
-                // Add removal ability if a user clicks a placed word
                 label.style.cursor = 'pointer';
                 label.onclick = (e) => {{
                     e.stopPropagation();
@@ -94,7 +91,6 @@ if uploaded_file is not None:
             }});
         }}
 
-        // Direct tap positioning rule
         layersContainer.addEventListener('click', function(e) {{
             if (activeInput) {{
                 commitActiveInput();
@@ -113,13 +109,19 @@ if uploaded_file is not None:
             input.style.position = 'absolute';
             input.style.left = clickX + 'px';
             input.style.top = (clickY - 14) + 'px';
+            
+            // --- FIXED: BOUND BOX SIZE CONTROLS ---
+            // Hard-locked max width limits prevent input box from expanding all over the sheet layout
+            input.style.width = '180px';
+            input.style.maxWidth = '220px';
+            
             input.style.fontSize = '12px';
             input.style.fontFamily = 'Helvetica';
             input.style.color = '#0000FF';
             input.style.fontWeight = 'bold';
             input.style.border = 'none';
             input.style.borderBottom = '1.5px solid #0055FF';
-            input.style.backgroundColor = 'rgba(255, 255, 200, 0.85)';
+            input.style.backgroundColor = 'rgba(255, 255, 200, 0.9)';
             input.style.outline = 'none';
             input.style.padding = '1px 2px';
             input.style.zIndex = '1000';
@@ -189,7 +191,7 @@ if uploaded_file is not None:
                     const {{ width, height }} = targetPage.getSize();
                     
                     const pdfX = entry.pctX * width;
-                    const pdfY = height - (entry.pctY * height) - 3; // Precise vector alignment rule
+                    const pdfY = height - (entry.pctY * height) - 3;
 
                     targetPage.drawText(entry.text, {{
                         x: pdfX,
