@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🎯 Professional PDF Form Filler")
-st.write("Font sizes now scale down dynamically to prevent long text or email addresses from cutting off!")
+st.write("Font sizes now scale down automatically to prevent text like email addresses from being cut off!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -49,10 +49,10 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # FIXED: Added an oninput event listener that dynamically drops font size if text exceeds field boundaries
+            # FIXED ENGINE: The adjustFontSize function recalculates size on every single character keystroke
             widgets_html_by_page[page_num] += f"""
             <input type="text" data-field="{f_id}" data-page="{page_num}" value="{current_val}" 
-                oninput="this.style.fontSize = this.value.length > 15 ? '7px' : (this.value.length > 10 ? '8px' : '10px');"
+                oninput="if(window.adjustFontSize) {{ window.adjustFontSize(this); }} else {{ this.style.fontSize = this.value.length > 20 ? '6px' : (this.value.length > 12 ? '7.5px' : '10px'); }}"
                 style="position: absolute; 
                        left: {left_pct}%; 
                        top: {top_pct}%; 
@@ -116,6 +116,16 @@ if uploaded_file is not None:
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
     <script>
+        window.adjustFontSize = function(input) {
+            let size = 10;
+            input.style.fontSize = size + "px";
+            // Dynamically scale down font until the text scrolls back inside its container width boundaries
+            while (input.scrollWidth > input.clientWidth && size > 5) {
+                size -= 0.5;
+                input.style.fontSize = size + "px";
+            }
+        };
+
         const pageImages = [__IMAGES_JS_STREAM__];
         let currentPage = 0;
         const totalPages = __TOTAL_PAGES__;
@@ -139,6 +149,13 @@ if uploaded_file is not None:
             
             prevBtn.disabled = (currentPage === 0);
             nextBtn.disabled = (currentPage === totalPages - 1);
+            
+            // Trigger auto-scaling check for existing data on display switch
+            setTimeout(() => {
+                document.querySelectorAll('#canvas-container input').forEach(el => {
+                    if (window.adjustFontSize) window.adjustFontSize(el);
+                });
+            }, 50);
         }
 
         prevBtn.addEventListener('click', () => {
@@ -148,6 +165,13 @@ if uploaded_file is not None:
         nextBtn.addEventListener('click', () => {
             if(currentPage < totalPages - 1) { currentPage++; updatePageDisplay(); }
         });
+
+        // Run initial configuration sync
+        setTimeout(() => {
+            document.querySelectorAll('#canvas-container input').forEach(el => {
+                if (window.adjustFontSize) window.adjustFontSize(el);
+            });
+        }, 300);
 
         updatePageDisplay();
 
@@ -183,13 +207,10 @@ if uploaded_file is not None:
                         
                         const pdfY = height - (topPct * height) - 8.5; 
 
-                        // FIXED: Output print layer calculates font size on compile length to protect layout export file
-                        let printSize = 9.5;
-                        if (textValue.length > 20) {
-                            printSize = 6.5;
-                        } else if (textValue.length > 13) {
-                            printSize = 8.0;
-                        }
+                        // Calculate matching crisp print dimensions based on active layout font sizes
+                        let computedFontSize = parseFloat(input.style.fontSize) || 10;
+                        let printSize = computedFontSize * 0.95; 
+                        if (printSize < 5.5) printSize = 5.5;
 
                         targetPage.drawText(textValue, {
                             x: pdfX,
