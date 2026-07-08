@@ -1,17 +1,20 @@
 import streamlit as st
 import fitz  # PyMuPDF
 import io
-from PIL import Image, ImageDraw
+import base64
+from PIL import Image
 
-st.set_page_config(page_title="Reliable Mobile PDF Filler", layout="wide")
-st.title("🎯 Mobile-Optimized PDF Filler")
-st.write("Type your details into the corresponding numbered fields below, click 'Apply & Lock Changes', then download.")
+st.set_page_config(page_title="Professional PDF Filler", layout="wide")
+st.title("🎯 Direct Visual PDF Signer")
+st.write("Tap directly inside any yellow dashed box to type. Press 'Done' or 'Enter' on your keyboard to lock it in.")
 
-# --- MEMORY CORES ---
+# --- PERSISTENT STORAGE LAYER ---
 if "pdf_data" not in st.session_state:
     st.session_state.pdf_data = None
 if "field_values" not in st.session_state:
     st.session_state.field_values = {}
+if "current_page" not in st.session_state:
+    st.session_state.current_page = 0
 
 uploaded_file = st.file_uploader("Upload your document:", type=["pdf"])
 
@@ -21,75 +24,94 @@ if uploaded_file is not None:
 
     doc = fitz.open(stream=st.session_state.pdf_data, filetype="pdf")
     total_pages = len(doc)
-    
-    if total_pages > 1:
-        page_num = st.number_input("Select Form Page", min_value=1, max_value=total_pages, value=1) - 1
-    else:
-        page_num = 0
 
-    page = doc[page_num]
-    widgets = list(page.widgets())
-
-    # --- STEP 1: RENDER HIGHLIGHTED PDF PREVIEW AT THE TOP ---
-    st.subheader("👁️ Document Page View")
-    
-    base_image = Image.open(io.BytesIO(page.get_pixmap(dpi=120).tobytes("png"))).convert("RGBA")
-    scale_x = base_image.width / page.rect.width
-    scale_y = base_image.height / page.rect.height
-
-    highlight_layer = Image.new("RGBA", base_image.size, (0, 0, 0, 0))
-    draw_layer = ImageDraw.Draw(highlight_layer)
-
-    # Label every yellow block with its corresponding number matching the input text line below
-    for idx, widget in enumerate(widgets):
-        rect = widget.rect
-        x0, y0, x1, y1 = rect.x0 * scale_x, rect.y0 * scale_y, rect.x1 * scale_x, rect.y1 * scale_y
+    # --- MOBILE-KEYBOARD SAVE TRIGGER ---
+    query_params = st.query_params
+    if "update_field" in query_params:
+        f_name = query_params["update_field"]
+        f_val = query_params.get("value", "")
         
-        # Soft yellow background highlight box
-        draw_layer.rectangle([x0, y0, x1, y1], fill=(255, 235, 59, 90), outline=(255, 152, 0, 200), width=1)
-        # Drop a small clear number indicator right on top of the yellow line box
-        draw_layer.text((x0 + 2, y0 - 12), f"Field {idx + 1}", fill=(255, 0, 0, 255))
+        st.session_state.field_values[f_name] = f_val
+        
+        # Burn value directly into the PDF structure on its correct page layer
+        for p_idx in range(total_pages):
+            for widget in doc[p_idx].widgets():
+                if widget.field_name == f_name:
+                    widget.field_value = f_val
+                    widget.update()
+                    break
+        st.session_state.pdf_data = doc.write()
+        st.query_params.clear()
+        st.rerun()
 
-    preview_final = Image.alpha_composite(base_image, highlight_layer).convert("RGB")
-    st.image(preview_final, use_container_width=True)
-    st.write("---")
-
-    # --- STEP 2: NATIVE FILLABLE TYPING LINES ---
-    st.subheader("🖋️ Form Fields (Match Numbers with Image Above)")
-    
-    if widgets:
-        for idx, widget in enumerate(widgets):
-            field_label = widget.field_name if widget.field_name else f"Field {idx + 1}"
-            current_saved_val = st.session_state.field_values.get(widget.field_name, widget.field_value or "")
-            
-            # Simple typing field that works flawlessly with phone keyboards
-            st.text_input(
-                f"👉 Line Number {idx + 1} ({field_label}):", 
-                value=current_saved_val, 
-                key=f"native_box_{widget.field_name}_{widget.xref}"
-            )
-
+    # --- PAGE NAVIGATION ---
+    if total_pages > 1:
         st.write("---")
-        # Solid save execution controller button to bypass mobile tap-away errors entirely
-        if st.button("💾 Apply & Lock Changes", use_container_width=True):
-            for widget in widgets:
-                user_typed_value = st.session_state[f"native_box_{widget.field_name}_{widget.xref}"]
-                st.session_state.field_values[widget.field_name] = user_typed_value
-                widget.field_value = user_typed_value
-                widget.update()
-            
-            st.session_state.pdf_data = doc.write()
-            st.success("All numbers permanently burned into the file! Ready to download.")
-            st.rerun()
-    else:
-        st.info("No interactive form fields discovered on this page.")
+        col_prev, col_status, col_next = st.columns([1, 2, 1])
+        with col_prev:
+            if st.button("⬅️ Previous Page", use_container_width=True, disabled=(st.session_state.current_page == 0)):
+                st.session_state.current_page -= 1
+                st.rerun()
+        with col_status:
+            st.markdown(f"<h4 style='text-align: center; margin: 0;'>Page {st.session_state.current_page + 1} of {total_pages}</h4>", unsafe_allow_html=True)
+        with col_next:
+            if st.button("Next Page ➡️", use_container_width=True, disabled=(st.session_state.current_page == total_pages - 1)):
+                st.session_state.current_page += 1
+                st.rerun()
+        st.write("---")
 
-    # --- STEP 3: MASTER FILE DOWNLOAD LINK ---
+    # Render current page view frame assets
+    page = doc[st.session_state.current_page]
+    pix = page.get_pixmap(dpi=140)
+    
+    img_bytes = pix.tobytes("png")
+    encoded_img = base64.b64encode(img_bytes).decode("utf-8")
+    
+    img_w = pix.width
+    img_h = pix.height
+    scale_x = img_w / page.rect.width
+    scale_y = img_h / page.rect.height
+
+    # Build clean interactive typing boxes exactly over form shapes
+    input_elements_html = ""
+    for widget in page.widgets():
+        r = widget.rect
+        x = r.x0 * scale_x
+        y = r.y0 * scale_y
+        w = (r.x1 - r.x0) * scale_x
+        h = (r.y1 - r.y0) * scale_y
+        
+        if h < 16:
+            h = 18
+            
+        current_val = st.session_state.field_values.get(widget.field_name, widget.field_value or "")
+        
+        # Uses 'onchange' to ensure typing saves instantly when hitting return/done on mobile
+        input_elements_html += f"""
+        <input type="text" value="{current_val}" 
+            style="position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; 
+                   background-color: rgba(255, 235, 59, 0.12); border: 1.5px dashed #ffc107; 
+                   border-radius: 2px; font-size: 13px; font-family: sans-serif; color: #0000FF;
+                   padding: 0px 2px; box-sizing: border-box;"
+            onchange="parent.window.location.search = '?update_field=' + encodeURIComponent('{widget.field_name}') + '&value=' + encodeURIComponent(this.value);"
+        />
+        """
+
+    workspace_html = f"""
+    <div style="position: relative; width: {img_w}px; height: {img_h}px; margin: 0 auto; user-select: none;">
+        <img src="data:image/png;base64,{encoded_img}" style="width: 100%; height: 100%; display: block;" />
+        {input_elements_html}
+    </div>
+    """
+    
+    st.components.v1.html(workspace_html, height=img_h + 20, width=img_w + 20, scrolling=True)
+
+    # --- DOWNLOAD EXPORT CONTROLLER ---
     st.write("---")
     st.download_button(
         label="📥 Download Completed PDF",
         data=st.session_state.pdf_data,
-        file_name="completed_and_saved_form.pdf",
+        file_name="completed_application.pdf",
         mime="application/pdf",
         use_container_width=True
     )
