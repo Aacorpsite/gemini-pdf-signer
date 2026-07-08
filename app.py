@@ -2,7 +2,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Professional PDF Filler", layout="wide")
 st.title("🛠️ Custom Form-Locked PDF Filler")
-st.write("Tap directly inside any yellow highlighted box to type. The fields are now locked directly to the document lines!")
+st.write("Tap directly inside any yellow highlighted box to type. Box boundaries and text sizes are locked perfectly!")
 
 uploaded_file = st.file_uploader("Upload your document template:", type=["pdf"])
 
@@ -21,7 +21,6 @@ if uploaded_file is not None:
     img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
     pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
-    # Get structural dimension tracking bounds
     img_w = pix.width
     img_h = pix.height
 
@@ -29,27 +28,32 @@ if uploaded_file is not None:
     for widget in page.widgets():
         r = widget.rect
         
-        # Calculate positions as percentages (%) of the total document size
-        # This keeps them locked perfectly to the image scaling on phone screens
         left_pct = (r.x0 / page.rect.width) * 100
         top_pct = (r.y0 / page.rect.height) * 100
         width_pct = ((r.x1 - r.x0) / page.rect.width) * 100
         height_pct = ((r.y1 - r.y0) / page.rect.height) * 100
         
-        # Enforce minimum touch target heights for mobile typing lines
         if height_pct < 2.0:
             height_pct = 2.2
             
         f_id = widget.field_name.replace('"', '&quot;')
-        current_val = widget.field_value or ""
+        
+        # --- FIXED: SQUASH DEFAULT PLACEHOLDER NOISE ---
+        # If the backend PDF value contains random single character artifact noise, ignore it and keep the box clean and blank
+        raw_val = widget.field_value or ""
+        if len(raw_val.strip()) <= 2 and raw_val.strip().lower() in ['f', 'ff', 't', 'on', 'off', '1', '0']:
+            current_val = ""
+        else:
+            current_val = raw_val
 
-        # Use responsive layout positioning structures
+        # --- OPTIMIZED STYLING FOR COMPACT MOBIL SPACES ---
+        # Smaller text (11px) prevents layout overflows on narrow lines
         input_elements_html += f"""
         <input type="text" data-field="{f_id}" value="{current_val}" 
             style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
-                   background-color: rgba(255, 235, 59, 0.25); border: 1px solid #e6b800; 
-                   border-radius: 1px; font-size: 11px; font-family: Helvetica, sans-serif; color: #0000FF;
-                   padding: 0px; box-sizing: border-box; outline: none; z-index: 10;"
+                   background-color: rgba(255, 235, 59, 0.22); border: 1px dashed #e6b800; 
+                   border-radius: 1px; font-size: 11px; font-family: Helvetica, sans-serif; font-weight: bold; color: #0000FF;
+                   padding: 0px 2px; box-sizing: border-box; outline: none; z-index: 10;"
         />
         """
 
@@ -77,7 +81,7 @@ if uploaded_file is not None:
             try {{
                 const pdfDataBytes = Uint8Array.from(atob('{pdf_base64}'), c => c.charCodeAt(0));
                 const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);
-                const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+                const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
                 const pages = pdfDoc.getPages();
                 const targetPage = pages[{page_num}];
                 const {{ width, height }} = targetPage.getSize();
@@ -89,19 +93,19 @@ if uploaded_file is not None:
                     const textValue = input.value.trim();
                     
                     if (textValue.length > 0) {{
-                        // Pull original percentage constraints natively
                         const leftPct = parseFloat(input.style.left) / 100;
                         const topPct = parseFloat(input.style.top) / 100;
                         
                         const pdfX = leftPct * width;
-                        const pdfY = height - (topPct * height) - 12; // Adjust vector baseline alignment
+                        // Slightly lower text offset baseline to align text crisply on the physical lines
+                        const pdfY = height - (topPct * height) - 10; 
 
                         targetPage.drawText(textValue, {{
                             x: pdfX,
                             y: pdfY,
-                            size: 10,
+                            size: 9, // Outputs slightly smaller to perfectly match long addresses
                             font: helveticaFont,
-                            color: PDFLib.rgb(0, 0, 1)
+                            color: PDFLib.rgb(0, 0, 0.8) // Dark professional blue
                         }});
                     }}
                 }}
@@ -110,15 +114,14 @@ if uploaded_file is not None:
                 const blob = new Blob([savedPdfBytes], {{ type: 'application/pdf' }});
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = 'form_completed_locked.pdf';
+                link.download = 'housing_application_completed.pdf';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             }} catch (err) {{
-                alert("Compilation processing error: " + err.message);
+                alert("Processing Error: " + err.message);
             }}
         }});
     </script>
     """
-    # Use fluid adjustments to support mobile screen frame spaces cleanly
     st.components.v1.html(filler_html, height=img_h + 100, width=img_w + 50, scrolling=True)
