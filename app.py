@@ -82,9 +82,8 @@ if uploaded_file is not None:
         layer_visibility = "block" if p_idx == 0 else "none"
         all_inputs_html += '<div class="page-layer" id="layer-' + str(p_idx) + '" style="display: ' + layer_visibility + '; position: absolute; top:0; left:0; width:100%; height:100%;">\n' + html_content + '\n</div>'
 
-    # --- NO TRIPLE QUOTES BLOCK ---
-    # Assembling text via explicit line joining stops compiler string tracking crashes entirely
-    html_lines = [
+    # FIXED: Variable explicitly named template_lines to match the join statement below perfectly
+    template_lines = [
         '<div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">',
         '    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">',
         '        <button id="prevBtn" style="padding: 11px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">⬅️ Previous Page</button>',
@@ -159,43 +158,3 @@ if uploaded_file is not None:
         '                    const width = sizeMetrics.width;',
         '                    const height = sizeMetrics.height;',
         '                    const leftPct = parseFloat(input.style.left) / 100;',
-        '                    const topPct = parseFloat(input.style.top) / 100;',
-        '                    const pdfX = leftPct * width;',
-        '                    const pdfY = height - (topPct * height) - 8.5;',
-        '                    let computedFontSize = parseFloat(input.style.fontSize) || 10;',
-        '                    let printSize = computedFontSize * 0.95;',
-        '                    if (printSize < 5.0) printSize = 5.0;',
-        '                    targetPage.drawText(textValue, { x: pdfX, y: pdfY, size: printSize, font: helveticaFont, color: PDFLib.rgb(0, 0, 0.75) });',
-        '                }',
-        '            }',
-        '            const checkboxes = document.querySelectorAll("#canvas-container div[data-type=\'checkbox\']");',
-        '            for (let box of checkboxes) {',
-        '                const pageIdx = parseInt(box.getAttribute("data-page"));',
-        '                const textValue = box.innerText.trim();',
-        '                if (textValue === "X") {',
-        '                    const targetPage = pages[pageIdx];',
-        '                    const sizeMetrics = targetPage.getSize();',
-        '                    const width = sizeMetrics.width;',
-        '                    const height = sizeMetrics.height;',
-        '                    const leftPct = parseFloat(box.style.left) / 100;',
-        '                    const topPct = parseFloat(box.style.top) / 100;',
-        '                    const widthPct = parseFloat(box.style.width) / 100;',
-        '                    const pdfX = (leftPct * width) + ((widthPct * width) / 2) - 3.5;',
-        '                    const pdfY = height - (topPct * height) - 8.5;',
-        '                    targetPage.drawText("X", { x: pdfX, y: pdfY, size: 9, font: helveticaFont, color: PDFLib.rgb(0, 0, 0.75) });',
-        '                }',
-        '            }',
-        '            const savedPdfBytes = await pdfDoc.save();',
-        '            const blob = new Blob([savedPdfBytes], { type: "application/pdf" });',
-        '            const link = document.createElement("a");',
-        '            link.href = URL.createObjectURL(blob);',
-        '            link.download = "housing_application_completed.pdf";',
-        '            document.body.appendChild(link);',
-        '            link.click();',
-        '            document.body.removeChild(link);',
-        '        } catch (err) { alert("Processing Error: " + err.message); }',
-        '    });',
-        '</script>'
-    ]
-    
-    raw_template = "\n".join(template_lines) if 'template_lines' in locals() else "\n".join(template_lines)
