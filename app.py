@@ -51,7 +51,7 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # If width is narrow, treat it as an instant tap checkbox selection frame
+            # If layout width is narrow, treat it as a tap checkbox selection frame
             if width_pct < 4.5:
                 widgets_html_by_page[page_num] += f"""
                 <div data-field="{f_id}" data-page="{page_num}" data-type="checkbox" onclick="if(window.toggleCheck) {{ window.toggleCheck(this); }}"
@@ -82,24 +82,120 @@ if uploaded_file is not None:
         layer_visibility = "block" if p_idx == 0 else "none"
         all_inputs_html += '<div class="page-layer" id="layer-' + str(p_idx) + '" style="display: ' + layer_visibility + '; position: absolute; top:0; left:0; width:100%; height:100%;">\n' + html_content + '\n</div>'
 
-    # Safe decoupled base template variable wrapper
-    raw_template = """
-    <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
-        <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-            <button id="prevBtn" style="padding: 11px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">⬅️ Previous Page</button>
-            <span id="pageIndicator" style="font-size: 16px; font-weight: bold; min-width: 100px;">Page 1 of __TOTAL_PAGES__</span>
-            <button id="nextBtn" style="padding: 11px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">Next Page ➡️</button>
-        </div>
-        <div style="margin-bottom: 15px;">
-            <button id="downloadBtn" style="padding: 14px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">📥 Download Completed PDF</button>
-        </div>
-        <div id="canvas-container" style="position: relative; display: inline-block; width: 100%; max-width: __MAX_WIDTH__px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc; touch-action: manipulation;">
-            <img id="pdf-bg" src='__FIRST_PAGE_IMG__' style="display: block; width: 100%; height: auto; pointer-events: none; user-select: none;" />
-            <div id="inputs-viewport" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">__ALL_INPUTS_HTML__</div>
-        </div>
-    </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script>
-        window.toggleCheck = function(element) {
-            element.innerText = (element.innerText === "X") ? "" : "X";
-        };
+    # --- NO TRIPLE QUOTES BLOCK ---
+    # Assembling text via explicit line joining stops compiler string tracking crashes entirely
+    html_lines = [
+        '<div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">',
+        '    <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">',
+        '        <button id="prevBtn" style="padding: 11px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">⬅️ Previous Page</button>',
+        '        <span id="pageIndicator" style="font-size: 16px; font-weight: bold; min-width: 100px;">Page 1 of __TOTAL_PAGES__</span>',
+        '        <button id="nextBtn" style="padding: 11px; font-weight: bold; background-color: #0055FF; color: white; border: none; border-radius: 4px; flex: 1;">Next Page ➡️</button>',
+        '    </div>',
+        '    <div style="margin-bottom: 15px;">',
+        '        <button id="downloadBtn" style="padding: 14px 24px; font-size: 16px; font-weight: bold; background-color: #00CC66; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">📥 Download Completed PDF</button>',
+        '    </div>',
+        '    <div id="canvas-container" style="position: relative; display: inline-block; width: 100%; max-width: __MAX_WIDTH__px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); border: 1px solid #ccc; touch-action: manipulation;">',
+        '        <img id="pdf-bg" src=\'__FIRST_PAGE_IMG__\' style="display: block; width: 100%; height: auto; pointer-events: none; user-select: none;" />',
+        '        <div id="inputs-viewport" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;">__ALL_INPUTS_HTML__</div>',
+        '    </div>',
+        '</div>',
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>',
+        '<script>',
+        '    window.toggleCheck = function(element) {',
+        '        element.innerText = (element.innerText === "X") ? "" : "X";',
+        '    };',
+        '    window.adjustFontSize = function(input) {',
+        '        let size = 10;',
+        '        input.style.fontSize = size + "px";',
+        '        while (input.scrollWidth > input.clientWidth && size > 5.0) {',
+        '            size -= 0.5;',
+        '            input.style.fontSize = size + "px";',
+        '        }',
+        '    };',
+        '    const pageImages = [__IMAGES_JS_STREAM__];',
+        '    let currentPage = 0;',
+        '    const totalPages = __TOTAL_PAGES__;',
+        '    const prevBtn = document.getElementById("prevBtn");',
+        '    const nextBtn = document.getElementById("nextBtn");',
+        '    const pageIndicator = document.getElementById("pageIndicator");',
+        '    const bgImg = document.getElementById("pdf-bg");',
+        '    const downloadBtn = document.getElementById("downloadBtn");',
+        '    function updatePageDisplay() {',
+        '        bgImg.src = pageImages[currentPage];',
+        '        pageIndicator.innerText = "Page " + (currentPage + 1) + " of " + totalPages;',
+        '        for(let i=0; i<totalPages; i++) {',
+        '            const layer = document.getElementById("layer-" + i);',
+        '            if(layer) { layer.style.display = (i === currentPage) ? "block" : "none"; }',
+        '        }',
+        '        prevBtn.disabled = (currentPage === 0);',
+        '        nextBtn.disabled = (currentPage === totalPages - 1);',
+        '        setTimeout(() => {',
+        '            document.querySelectorAll("#canvas-container input[data-type=\'text\']").forEach(el => {',
+        '                if (window.adjustFontSize) window.adjustFontSize(el);',
+        '            });',
+        '        }, 60);',
+        '    }',
+        '    prevBtn.addEventListener("click", () => { if(currentPage > 0) { currentPage--; updatePageDisplay(); } });',
+        '    nextBtn.addEventListener("click", () => { if(currentPage < totalPages - 1) { currentPage++; updatePageDisplay(); } });',
+        '    setTimeout(() => {',
+        '        document.querySelectorAll("#canvas-container input[data-type=\'text\']").forEach(el => {',
+        '            if (window.adjustFontSize) window.adjustFontSize(el);',
+        '        });',
+        '    }, 350);',
+        '    updatePageDisplay();',
+        '    downloadBtn.addEventListener("click", async function() {',
+        '        try {',
+        '            const pdfDataBytes = Uint8Array.from(atob("__PDF_BASE64__"), c => c.charCodeAt(0));',
+        '            const pdfDoc = await PDFLib.PDFDocument.load(pdfDataBytes);',
+        '            const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);',
+        '            const pages = pdfDoc.getPages();',
+        '            const textInputs = document.querySelectorAll("#canvas-container input[data-type=\'text\']");',
+        '            for (let input of textInputs) {',
+        '                const pageIdx = parseInt(input.getAttribute("data-page"));',
+        '                const textValue = input.value.trim();',
+        '                if (textValue.length > 0) {',
+        '                    const targetPage = pages[pageIdx];',
+        '                    const sizeMetrics = targetPage.getSize();',
+        '                    const width = sizeMetrics.width;',
+        '                    const height = sizeMetrics.height;',
+        '                    const leftPct = parseFloat(input.style.left) / 100;',
+        '                    const topPct = parseFloat(input.style.top) / 100;',
+        '                    const pdfX = leftPct * width;',
+        '                    const pdfY = height - (topPct * height) - 8.5;',
+        '                    let computedFontSize = parseFloat(input.style.fontSize) || 10;',
+        '                    let printSize = computedFontSize * 0.95;',
+        '                    if (printSize < 5.0) printSize = 5.0;',
+        '                    targetPage.drawText(textValue, { x: pdfX, y: pdfY, size: printSize, font: helveticaFont, color: PDFLib.rgb(0, 0, 0.75) });',
+        '                }',
+        '            }',
+        '            const checkboxes = document.querySelectorAll("#canvas-container div[data-type=\'checkbox\']");',
+        '            for (let box of checkboxes) {',
+        '                const pageIdx = parseInt(box.getAttribute("data-page"));',
+        '                const textValue = box.innerText.trim();',
+        '                if (textValue === "X") {',
+        '                    const targetPage = pages[pageIdx];',
+        '                    const sizeMetrics = targetPage.getSize();',
+        '                    const width = sizeMetrics.width;',
+        '                    const height = sizeMetrics.height;',
+        '                    const leftPct = parseFloat(box.style.left) / 100;',
+        '                    const topPct = parseFloat(box.style.top) / 100;',
+        '                    const widthPct = parseFloat(box.style.width) / 100;',
+        '                    const pdfX = (leftPct * width) + ((widthPct * width) / 2) - 3.5;',
+        '                    const pdfY = height - (topPct * height) - 8.5;',
+        '                    targetPage.drawText("X", { x: pdfX, y: pdfY, size: 9, font: helveticaFont, color: PDFLib.rgb(0, 0, 0.75) });',
+        '                }',
+        '            }',
+        '            const savedPdfBytes = await pdfDoc.save();',
+        '            const blob = new Blob([savedPdfBytes], { type: "application/pdf" });',
+        '            const link = document.createElement("a");',
+        '            link.href = URL.createObjectURL(blob);',
+        '            link.download = "housing_application_completed.pdf";',
+        '            document.body.appendChild(link);',
+        '            link.click();',
+        '            document.body.removeChild(link);',
+        '        } catch (err) { alert("Processing Error: " + err.message); }',
+        '    });',
+        '</script>'
+    ]
+    
+    raw_template = "\n".join(template_lines) if 'template_lines' in locals() else "\n".join(template_lines)
