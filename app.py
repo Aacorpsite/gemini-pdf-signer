@@ -36,12 +36,15 @@ if uploaded_file is not None:
             width_pct = ((r.x1 - r.x0) / page.rect.width) * 100
             height_pct = ((r.y1 - r.y0) / page.rect.height) * 100
             
-            if height_pct > 3.0:
-                height_pct = 2.5
-            elif height_pct < 1.6:
-                height_pct = 1.8
+            # --- FIXED: STRICT ROW HIGHLIGHT CLIPPING ---
+            # Shrinks row container targets vertically so they can never drop down over text prompts below them
+            if height_pct > 2.8:
+                height_pct = 2.2
+            elif height_pct < 1.5:
+                height_pct = 1.7
                 
             f_id = widget.field_name.replace('"', '&quot;')
+            f_id_lower = f_id.lower()
             
             raw_val = widget.field_value or ""
             cleaned_val = raw_val.strip()
@@ -51,8 +54,11 @@ if uploaded_file is not None:
             else:
                 current_val = raw_val
 
-            # Use narrow width to distinguish checkboxes from input rows dynamically
-            if width_pct < 4.5:
+            # --- FIXED: TARGETED INTERACTIVE FILTER ---
+            # Checks width, but explicitly excludes text fields like "year", "month", or "date" so they let you type numbers
+            is_numeric_input = "year" in f_id_lower or "month" in f_id_lower or "date" in f_id_lower
+            
+            if width_pct < 4.5 and not is_numeric_input:
                 widgets_html_by_page[page_num] += f"""
                 <div data-field="{f_id}" data-page="{page_num}" data-type="checkbox" onclick="if(window.toggleCheck) {{ window.toggleCheck(this); }}"
                     style="position: absolute; left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; height: {height_pct}%; 
@@ -82,7 +88,6 @@ if uploaded_file is not None:
         layer_visibility = "block" if p_idx == 0 else "none"
         all_inputs_html += '<div class="page-layer" id="layer-' + str(p_idx) + '" style="display: ' + layer_visibility + '; position: absolute; top:0; left:0; width:100%; height:100%;">\n' + html_content + '\n</div>'
 
-    # --- STANDARD TEXT STRING (SAFE FROM PYTHON PARSING ERRORS) ---
     raw_template = """
     <div id="wrapper" style="position: relative; max-width: 100%; text-align: center; font-family: Arial, sans-serif; margin: 0 auto;">
         <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
@@ -186,24 +191,3 @@ if uploaded_file is not None:
                     }
                 }
                 const savedPdfBytes = await pdfDoc.save();
-                const blob = new Blob([savedPdfBytes], { type: 'application/pdf' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = 'housing_application_completed.pdf';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            } catch (err) { alert("Processing Error: " + err.message); }
-        });
-    </script>
-    """
-    
-    # Secure clean injection swapping
-    filler_html = raw_template.replace("__TOTAL_PAGES__", str(total_pages))
-    filler_html = filler_html.replace("__MAX_WIDTH__", str(pix.width))
-    filler_html = filler_html.replace("__FIRST_PAGE_IMG__", images_js_array[0].strip('"'))
-    filler_html = filler_html.replace("__ALL_INPUTS_HTML__", all_inputs_html)
-    filler_html = filler_html.replace("__IMAGES_JS_STREAM__", js_images_stream)
-    filler_html = filler_html.replace("__PDF_BASE64__", pdf_base64)
-
-    st.components.v1.html(filler_html, height=img_h + 150, width=img_w + 50, scrolling=True)
